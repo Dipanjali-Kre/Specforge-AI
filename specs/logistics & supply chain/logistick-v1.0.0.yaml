@@ -1,0 +1,2683 @@
+openapi: 3.1.0
+info:
+  title: Logistick API
+  description: |
+    API for managing logistics and supply chain operations, including inventory, warehouses, shipments, and stock transfers.
+    This API adheres to strict company standards for field naming, response structures, and security.
+
+    **Logging & Audit Trail:** All API requests are logged for auditing purposes, including request/response payloads and metadata.
+    A unique `X-Request-ID` header is generated for each request to facilitate tracing and debugging across services.
+
+    **Service Level Agreements (SLA) & Timeouts:**
+    Typical API response times are under 200ms. Specific endpoint SLAs are documented internally.
+    Clients should implement appropriate timeout mechanisms (e.g., 5-10 seconds) for API calls.
+  version: 1.0.0
+  contact:
+    name: Logistick Support
+    url: https://logistick.com/support
+    email: support@logistick.com
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+servers:
+  - url: https://api.logistick.com/api/v1
+    description: Production Logistick API server
+  - url: https://dev.api.logistick.com/api/v1
+    description: Development Logistick API server
+tags:
+  - name: Health
+    description: API health check operations.
+  - name: Products
+    description: Operations related to managing product catalog and inventory items.
+  - name: Warehouses
+    description: Operations for managing physical storage locations.
+  - name: Stock
+    description: Operations for managing product stock levels within warehouses.
+  - name: Stock Transfers
+    description: Operations for managing movement of stock between warehouses.
+  - name: Shipments
+    description: Operations for managing outbound shipments to customers or other locations.
+  - name: Orders
+    description: Operations for managing customer orders that drive logistics processes.
+security:
+  - BearerAuth: []
+x-logging-policy: "All requests are logged with X-Request-ID for tracing and auditing."
+x-sla-policy: "Typical response times < 200ms. Clients should implement 5-10s timeouts."
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health Check
+      description: Checks the health and availability of the Logistick API.
+      operationId: getHealthStatus
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+      responses:
+        200:
+          description: API is healthy and operational.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+              examples:
+                healthy:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: API is healthy
+                    data:
+                      status: UP
+        500:
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                internalError:
+                  value:
+                    error:
+                      code: INTERNAL_ERROR
+                      message: An unexpected error occurred.
+                      details: []
+                      traceId: 550e8400-e29b-41d4-a716-446655440000
+
+  /products:
+    get:
+      tags:
+        - Products
+      summary: List Products
+      description: Retrieves a paginated list of all products in the catalog.
+      operationId: listProducts
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: category
+          in: query
+          description: Filter products by category.
+          required: false
+          schema:
+            $ref: '#/components/schemas/ProductCategory'
+          example: Electronics
+        - name: name
+          in: query
+          description: Search products by name (partial match).
+          required: false
+          schema:
+            $ref: '#/components/schemas/GenericNameString'
+          example: Laptop
+      responses:
+        200:
+          description: A paginated list of products.
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
+              examples:
+                success:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Products retrieved successfully.
+                    data:
+                      products:
+                        - skuCode: PROD-001
+                          name: Wireless Mouse
+                          unitPrice: 25.99
+                          category: PERIPHERALS
+                          description: Ergonomic wireless mouse with adjustable DPI.
+                          stockQuantity: 150
+                          imageUrl: https://example.com/images/mouse.jpg
+                          createdAt: '2023-01-15T10:30:00Z'
+                          updatedAt: '2023-09-20T14:00:00Z'
+                        - skuCode: PROD-002
+                          name: Mechanical Keyboard
+                          unitPrice: 89.99
+                          category: PERIPHERALS
+                          description: RGB mechanical keyboard with tactile switches.
+                          stockQuantity: 75
+                          imageUrl: https://example.com/images/keyboard.jpg
+                          createdAt: '2023-02-01T11:00:00Z'
+                          updatedAt: '2023-10-01T09:00:00Z'
+                      pagination:
+                        page: 1
+                        pageSize: 10
+                        totalCount: 2
+                        totalPages: 1
+                        hasNextPage: false
+                        hasPreviousPage: false
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Products
+      summary: Create Product
+      description: Creates a new product in the catalog.
+      operationId: createProduct
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: Product details to create.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreateRequest'
+            examples:
+              newProduct:
+                value:
+                  skuCode: PROD-003
+                  name: USB-C Hub
+                  unitPrice: 49.99
+                  category: ACCESSORIES
+                  description: 7-in-1 USB-C hub with HDMI, USB 3.0, and PD.
+                  stockQuantity: 200
+                  imageUrl: https://example.com/images/usbc-hub.jpg
+      responses:
+        201:
+          description: Product created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+              examples:
+                createdProduct:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Product created successfully.
+                    data:
+                      skuCode: PROD-003
+                      name: USB-C Hub
+                      unitPrice: 49.99
+                      category: ACCESSORIES
+                      description: 7-in-1 USB-C hub with HDMI, USB 3.0, and PD.
+                      stockQuantity: 200
+                      imageUrl: https://example.com/images/usbc-hub.jpg
+                      createdAt: '2023-10-27T10:00:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        409:
+          $ref: '#/components/responses/Conflict'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /products/{skuCode}:
+    parameters:
+      - name: skuCode
+        in: path
+        description: The unique SKU code of the product.
+        required: true
+        schema:
+          $ref: '#/components/schemas/SkuCodeString'
+        example: PROD-001
+    get:
+      tags:
+        - Products
+      summary: Get Product by SKU
+      description: Retrieves a single product by its unique SKU code.
+      operationId: getProductBySku
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+      responses:
+        200:
+          description: Product details retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+              examples:
+                productFound:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Product retrieved successfully.
+                    data:
+                      skuCode: PROD-001
+                      name: Wireless Mouse
+                      unitPrice: 25.99
+                      category: PERIPHERALS
+                      description: Ergonomic wireless mouse with adjustable DPI.
+                      stockQuantity: 150
+                      imageUrl: https://example.com/images/mouse.jpg
+                      createdAt: '2023-01-15T10:30:00Z'
+                      updatedAt: '2023-09-20T14:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags:
+        - Products
+      summary: Update Product (Full Replacement)
+      description: Fully updates an existing product identified by its SKU code. All fields must be provided.
+      operationId: updateProduct
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: Full product details to update.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreateRequest' # Reusing create schema for full replacement
+            examples:
+              updatedProduct:
+                value:
+                  skuCode: PROD-001
+                  name: Wireless Gaming Mouse
+                  unitPrice: 35.99
+                  category: PERIPHERALS # Corrected from 'Gaming Peripherals'
+                  description: High-performance wireless gaming mouse with customizable RGB.
+                  stockQuantity: 120
+                  imageUrl: https://example.com/images/gaming-mouse.jpg
+      responses:
+        200:
+          description: Product updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+              examples:
+                productUpdated:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Product updated successfully.
+                    data:
+                      skuCode: PROD-001
+                      name: Wireless Gaming Mouse
+                      unitPrice: 35.99
+                      category: PERIPHERALS # Corrected from 'Gaming Peripherals'
+                      description: High-performance wireless gaming mouse with customizable RGB.
+                      stockQuantity: 120
+                      imageUrl: https://example.com/images/gaming-mouse.jpg
+                      createdAt: '2023-01-15T10:30:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Products
+      summary: Partially Update Product
+      description: Partially updates an existing product identified by its SKU code. Only provided fields will be updated.
+      operationId: patchProduct
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: Partial product details to update.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdateRequest'
+            examples:
+              partialUpdate:
+                value:
+                  unitPrice: 30.00
+                  stockQuantity: 130
+      responses:
+        200:
+          description: Product partially updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+              examples:
+                productPatched:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Product partially updated successfully.
+                    data:
+                      skuCode: PROD-001
+                      name: Wireless Gaming Mouse
+                      unitPrice: 30.00
+                      category: PERIPHERALS # Corrected from 'Gaming Peripherals'
+                      description: High-performance wireless gaming mouse with customizable RGB.
+                      stockQuantity: 130
+                      imageUrl: https://example.com/images/gaming-mouse.jpg
+                      createdAt: '2023-01-15T10:30:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Products
+      summary: Delete Product
+      description: Deletes a product from the catalog by its SKU code.
+      operationId: deleteProduct
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+      responses:
+        204:
+          description: Product deleted successfully. No content returned.
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /warehouses:
+    get:
+      tags:
+        - Warehouses
+      summary: List Warehouses
+      description: Retrieves a paginated list of all warehouses.
+      operationId: listWarehouses
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: location
+          in: query
+          description: Filter warehouses by location (city/state).
+          required: false
+          schema:
+            $ref: '#/components/schemas/GenericNameString'
+          example: New York
+      responses:
+        200:
+          description: A paginated list of warehouses.
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarehouseListResponse'
+              examples:
+                success:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Warehouses retrieved successfully.
+                    data:
+                      warehouses:
+                        - warehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                          name: Main Distribution Center
+                          location: New York, NY
+                          capacityCubicFeet: 100000
+                          createdAt: '2022-05-01T08:00:00Z'
+                          updatedAt: '2023-09-10T12:00:00Z'
+                        - warehouseId: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+                          name: West Coast Hub
+                          location: Los Angeles, CA
+                          capacityCubicFeet: 75000
+                          createdAt: '2022-06-15T09:00:00Z'
+                          updatedAt: '2023-08-20T11:00:00Z'
+                      pagination:
+                        page: 1
+                        pageSize: 10
+                        totalCount: 2
+                        totalPages: 1
+                        hasNextPage: false
+                        hasPreviousPage: false
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Warehouses
+      summary: Create Warehouse
+      description: Creates a new warehouse.
+      operationId: createWarehouse
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: Warehouse details to create.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WarehouseCreateRequest'
+            examples:
+              newWarehouse:
+                value:
+                  name: Midwest Fulfillment Center
+                  location: Chicago, IL
+                  capacityCubicFeet: 50000
+      responses:
+        201:
+          description: Warehouse created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarehouseResponse'
+              examples:
+                createdWarehouse:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Warehouse created successfully.
+                    data:
+                      warehouseId: 3c4d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f
+                      name: Midwest Fulfillment Center
+                      location: Chicago, IL
+                      capacityCubicFeet: 50000
+                      createdAt: '2023-10-27T10:00:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        409:
+          $ref: '#/components/responses/Conflict'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /warehouses/{warehouseId}:
+    parameters:
+      - name: warehouseId
+        in: path
+        description: The unique ID of the warehouse.
+        required: true
+        schema:
+          $ref: '#/components/schemas/UuidString'
+        example: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+    get:
+      tags:
+        - Warehouses
+      summary: Get Warehouse by ID
+      description: Retrieves a single warehouse by its unique ID.
+      operationId: getWarehouseById
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+      responses:
+        200:
+          description: Warehouse details retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarehouseResponse'
+              examples:
+                warehouseFound:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Warehouse retrieved successfully.
+                    data:
+                      warehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      name: Main Distribution Center
+                      location: New York, NY
+                      capacityCubicFeet: 100000
+                      createdAt: '2022-05-01T08:00:00Z'
+                      updatedAt: '2023-09-10T12:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags:
+        - Warehouses
+      summary: Update Warehouse (Full Replacement)
+      description: Fully updates an existing warehouse identified by its ID. All fields must be provided.
+      operationId: updateWarehouse
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: Full warehouse details to update.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WarehouseCreateRequest'
+            examples:
+              updatedWarehouse:
+                value:
+                  name: Main Distribution Center - East
+                  location: New York, NY
+                  capacityCubicFeet: 120000
+      responses:
+        200:
+          description: Warehouse updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WarehouseResponse'
+              examples:
+                warehouseUpdated:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Warehouse updated successfully.
+                    data:
+                      warehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      name: Main Distribution Center - East
+                      location: New York, NY
+                      capacityCubicFeet: 120000
+                      createdAt: '2022-05-01T08:00:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Warehouses
+      summary: Delete Warehouse
+      description: Deletes a warehouse by its ID.
+      operationId: deleteWarehouse
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+      responses:
+        204:
+          description: Warehouse deleted successfully. No content returned.
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /warehouses/{warehouseId}/stock-items:
+    parameters:
+      - name: warehouseId
+        in: path
+        description: The unique ID of the warehouse.
+        required: true
+        schema:
+          $ref: '#/components/schemas/UuidString'
+        example: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+    get:
+      tags:
+        - Stock
+        - Warehouses
+      summary: List Stock Items in Warehouse
+      description: Retrieves a paginated list of all stock items for a specific warehouse.
+      operationId: listStockItemsInWarehouse
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: skuCode
+          in: query
+          description: Filter stock items by product SKU code.
+          required: false
+          schema:
+            $ref: '#/components/schemas/SkuCodeString'
+          example: PROD-001
+      responses:
+        200:
+          description: A paginated list of stock items.
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItemListResponse'
+              examples:
+                success:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Stock items retrieved successfully.
+                    data:
+                      stockItems:
+                        - stockItemId: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
+                          skuCode: PROD-001
+                          warehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                          quantity: 150
+                          lastMovedAt: '2023-10-25T10:00:00Z'
+                          createdAt: '2023-01-15T10:30:00Z'
+                          updatedAt: '2023-10-25T10:00:00Z'
+                        - stockItemId: b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e
+                          skuCode: PROD-002
+                          warehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                          quantity: 75
+                          lastMovedAt: '2023-10-26T11:00:00Z'
+                          createdAt: '2023-02-01T11:00:00Z'
+                          updatedAt: '2023-10-26T11:00:00Z'
+                      pagination:
+                        page: 1
+                        pageSize: 10
+                        totalCount: 2
+                        totalPages: 1
+                        hasNextPage: false
+                        hasPreviousPage: false
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /stock-items/{stockItemId}:
+    parameters:
+      - name: stockItemId
+        in: path
+        description: The unique ID of the stock item.
+        required: true
+        schema:
+          $ref: '#/components/schemas/UuidString'
+        example: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
+    get:
+      tags:
+        - Stock
+      summary: Get Stock Item by ID
+      description: Retrieves a single stock item by its unique ID.
+      operationId: getStockItemById
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+      responses:
+        200:
+          description: Stock item details retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItemResponse'
+              examples:
+                stockItemFound:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Stock item retrieved successfully.
+                    data:
+                      stockItemId: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
+                      skuCode: PROD-001
+                      warehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      quantity: 150
+                      lastMovedAt: '2023-10-25T10:00:00Z'
+                      createdAt: '2023-01-15T10:30:00Z'
+                      updatedAt: '2023-10-25T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Stock
+      summary: Adjust Stock Item Quantity
+      description: Adjusts the quantity of a specific stock item. This can be used for manual corrections, inventory counts, etc.
+      operationId: adjustStockItemQuantity
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: New quantity for the stock item.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockItemAdjustRequest'
+            examples:
+              adjustQuantity:
+                value:
+                  quantity: 145
+      responses:
+        200:
+          description: Stock item quantity adjusted successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItemResponse'
+              examples:
+                stockItemAdjusted:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Stock item quantity adjusted.
+                    data:
+                      stockItemId: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
+                      skuCode: PROD-001
+                      warehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      quantity: 145
+                      lastMovedAt: '2023-10-27T10:00:00Z' # Corrected date format
+                      createdAt: '2023-01-15T10:30:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /stock-transfers:
+    get:
+      tags:
+        - Stock Transfers
+      summary: List Stock Transfers
+      description: Retrieves a paginated list of all stock transfers.
+      operationId: listStockTransfers
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: statusCode
+          in: query
+          description: Filter transfers by status.
+          required: false
+          schema:
+            $ref: '#/components/schemas/StockTransferStatus'
+          example: IN_TRANSIT
+        - name: fromWarehouseId
+          in: query
+          description: Filter transfers originating from a specific warehouse ID.
+          required: false
+          schema:
+            $ref: '#/components/schemas/UuidString'
+          example: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+      responses:
+        200:
+          description: A paginated list of stock transfers.
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockTransferListResponse'
+              examples:
+                success:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Stock transfers retrieved successfully.
+                    data:
+                      stockTransfers:
+                        - transferId: c1d2e3f4-a5b6-c7d8-e9f0-1a2b3c4d5e6f
+                          skuCode: PROD-001
+                          fromWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                          toWarehouseId: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+                          quantity: 50
+                          statusCode: IN_TRANSIT
+                          transferDate: '2023-10-20T09:00:00Z'
+                          createdAt: '2023-10-19T15:00:00Z'
+                          updatedAt: '2023-10-20T09:00:00Z'
+                        - transferId: d2e3f4a5-b6c7-d8e9-f0a1-b2c3d4e5f6a7
+                          skuCode: PROD-002
+                          fromWarehouseId: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+                          toWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                          quantity: 20
+                          statusCode: COMPLETED
+                          transferDate: '2023-10-10T14:00:00Z'
+                          createdAt: '2023-10-09T10:00:00Z'
+                          updatedAt: '2023-10-10T16:00:00Z'
+                      pagination:
+                        page: 1
+                        pageSize: 10
+                        totalCount: 2
+                        totalPages: 1
+                        hasNextPage: false
+                        hasPreviousPage: false
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Stock Transfers
+      summary: Create Stock Transfer
+      description: Initiates a new stock transfer between two warehouses.
+      operationId: createStockTransfer
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: Details for the stock transfer.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockTransferCreateRequest'
+            examples:
+              newTransfer:
+                value:
+                  skuCode: PROD-003
+                  fromWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                  toWarehouseId: 3c4d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f
+                  quantity: 100
+      responses:
+        201:
+          description: Stock transfer initiated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockTransferResponse'
+              examples:
+                createdTransfer:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Stock transfer initiated.
+                    data:
+                      transferId: e3f4a5b6-c7d8-e9f0-a1b2-c3d4e5f6a7b8
+                      skuCode: PROD-003
+                      fromWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      toWarehouseId: 3c4d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f
+                      quantity: 100
+                      statusCode: PENDING
+                      transferDate: '2023-10-27T10:00:00Z'
+                      createdAt: '2023-10-27T10:00:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          description: One or both warehouses not found, or product not found in source warehouse.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                warehouseNotFound:
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: Source or destination warehouse not found.
+                      details: []
+                      traceId: 550e8400-e29b-41d4-a716-446655440000
+                insufficientStock:
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Insufficient stock in the source warehouse for the requested transfer quantity.
+                      details: []
+                      traceId: 550e8400-e29b-41d4-a716-446655440000
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /stock-transfers/{transferId}:
+    parameters:
+      - name: transferId
+        in: path
+        description: The unique ID of the stock transfer.
+        required: true
+        schema:
+          $ref: '#/components/schemas/UuidString'
+        example: c1d2e3f4-a5b6-c7d8-e9f0-1a2b3c4d5e6f
+    get:
+      tags:
+        - Stock Transfers
+      summary: Get Stock Transfer by ID
+      description: Retrieves a single stock transfer by its unique ID.
+      operationId: getStockTransferById
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+      responses:
+        200:
+          description: Stock transfer details retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockTransferResponse'
+              examples:
+                transferFound:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Stock transfer retrieved successfully.
+                    data:
+                      transferId: c1d2e3f4-a5b6-c7d8-e9f0-1a2b3c4d5e6f
+                      skuCode: PROD-001
+                      fromWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      toWarehouseId: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+                      quantity: 50
+                      statusCode: IN_TRANSIT
+                      transferDate: '2023-10-20T09:00:00Z'
+                      createdAt: '2023-10-19T15:00:00Z'
+                      updatedAt: '2023-10-20T09:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Stock Transfers
+      summary: Update Stock Transfer Status
+      description: Updates the status of an existing stock transfer.
+      operationId: updateStockTransferStatus
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: New status for the stock transfer.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockTransferUpdateRequest'
+            examples:
+              updateStatus:
+                value:
+                  statusCode: COMPLETED
+      responses:
+        200:
+          description: Stock transfer status updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockTransferResponse'
+              examples:
+                transferStatusUpdated:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Stock transfer status updated.
+                    data:
+                      transferId: c1d2e3f4-a5b6-c7d8-e9f0-1a2b3c4d5e6f
+                      skuCode: PROD-001
+                      fromWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      toWarehouseId: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+                      quantity: 50
+                      statusCode: COMPLETED
+                      transferDate: '2023-10-20T09:00:00Z'
+                      createdAt: '2023-10-19T15:00:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        409:
+          description: Cannot update transfer in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidState:
+                  value:
+                    error:
+                      code: CONFLICT
+                      message: Cannot update a completed or cancelled transfer.
+                      details: []
+                      traceId: 550e8400-e29b-41d4-a716-446655440000
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /shipments:
+    get:
+      tags:
+        - Shipments
+      summary: List Shipments
+      description: Retrieves a paginated list of all shipments.
+      operationId: listShipments
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: statusCode
+          in: query
+          description: Filter shipments by status.
+          required: false
+          schema:
+            $ref: '#/components/schemas/ShipmentStatus'
+          example: SHIPPED
+        - name: orderId
+          in: query
+          description: Filter shipments by associated order ID.
+          required: false
+          schema:
+            $ref: '#/components/schemas/UuidString'
+          example: f1e2d3c4-b5a6-9e8d-7c6b-5a4f3e2d1c0b
+      responses:
+        200:
+          description: A paginated list of shipments.
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShipmentListResponse'
+              examples:
+                success:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Shipments retrieved successfully.
+                    data:
+                      shipments:
+                        - shipmentId: f1e2d3c4-b5a6-9e8d-7c6b-5a4f3e2d1c0b
+                          orderId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                          originWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                          destinationAddress: 123 Main St, Anytown, USA 12345
+                          statusCode: SHIPPED
+                          trackingNumber: TRK123456789
+                          estimatedDeliveryDate: '2023-11-01T17:00:00Z'
+                          shipmentItems:
+                            - skuCode: PROD-001
+                              quantity: 2
+                            - skuCode: PROD-002
+                              quantity: 1
+                          createdAt: '2023-10-25T10:00:00Z'
+                          updatedAt: '2023-10-26T14:00:00Z'
+                      pagination:
+                        page: 1
+                        pageSize: 10
+                        totalCount: 1
+                        totalPages: 1
+                        hasNextPage: false
+                        hasPreviousPage: false
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Shipments
+      summary: Create Shipment
+      description: Creates a new shipment for an order. This typically triggers the fulfillment process.
+      operationId: createShipment
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: Shipment details to create.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShipmentCreateRequest'
+            examples:
+              newShipment:
+                value:
+                  orderId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                  originWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                  destinationAddress: 123 Main St, Anytown, USA 12345
+                  shipmentItems:
+                    - skuCode: PROD-001
+                      quantity: 2
+                    - skuCode: PROD-002
+                      quantity: 1
+      responses:
+        201:
+          description: Shipment created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShipmentResponse'
+              examples:
+                createdShipment:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Shipment created successfully.
+                    data:
+                      shipmentId: g2h3i4j5-k6l7-m8n9-o0p1-q2r3s4t5u6v7
+                      orderId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                      originWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      destinationAddress: 123 Main St, Anytown, USA 12345
+                      statusCode: PENDING
+                      trackingNumber: null
+                      estimatedDeliveryDate: null
+                      shipmentItems:
+                        - skuCode: PROD-001
+                          quantity: 2
+                        - skuCode: PROD-002
+                          quantity: 1
+                      createdAt: '2023-10-27T10:00:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          description: Order or warehouse not found, or insufficient stock.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                orderNotFound:
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: Order or origin warehouse not found.
+                      details: []
+                      traceId: 550e8400-e29b-41d4-a716-446655440000
+                insufficientStock:
+                  value:
+                    error:
+                      code: VALIDATION_ERROR
+                      message: Insufficient stock for one or more products in the origin warehouse.
+                      details: []
+                      traceId: 550e8400-e29b-41d4-a716-446655440000
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /shipments/{shipmentId}:
+    parameters:
+      - name: shipmentId
+        in: path
+        description: The unique ID of the shipment.
+        required: true
+        schema:
+          $ref: '#/components/schemas/UuidString'
+        example: f1e2d3c4-b5a6-9e8d-7c6b-5a4f3e2d1c0b
+    get:
+      tags:
+        - Shipments
+      summary: Get Shipment by ID
+      description: Retrieves a single shipment by its unique ID.
+      operationId: getShipmentById
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+      responses:
+        200:
+          description: Shipment details retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShipmentResponse'
+              examples:
+                shipmentFound:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Shipment retrieved successfully.
+                    data:
+                      shipmentId: f1e2d3c4-b5a6-9e8d-7c6b-5a4f3e2d1c0b
+                      orderId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                      originWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      destinationAddress: 123 Main St, Anytown, USA 12345
+                      statusCode: SHIPPED
+                      trackingNumber: TRK123456789
+                      estimatedDeliveryDate: '2023-11-01T17:00:00Z'
+                      shipmentItems:
+                        - skuCode: PROD-001
+                          quantity: 2
+                        - skuCode: PROD-002
+                          quantity: 1
+                      createdAt: '2023-10-25T10:00:00Z'
+                      updatedAt: '2023-10-26T14:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Shipments
+      summary: Update Shipment Details
+      description: Partially updates an existing shipment's details, such as status, tracking number, or estimated delivery date.
+      operationId: updateShipmentDetails
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: Partial shipment details to update.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShipmentUpdateRequest'
+            examples:
+              updateTracking:
+                value:
+                  statusCode: IN_TRANSIT
+                  trackingNumber: TRK987654321
+                  estimatedDeliveryDate: '2023-11-02T17:00:00Z'
+      responses:
+        200:
+          description: Shipment details updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShipmentResponse'
+              examples:
+                shipmentUpdated:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Shipment details updated.
+                    data:
+                      shipmentId: f1e2d3c4-b5a6-9e8d-7c6b-5a4f3e2d1c0b
+                      orderId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                      originWarehouseId: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+                      destinationAddress: 123 Main St, Anytown, USA 12345
+                      statusCode: IN_TRANSIT
+                      trackingNumber: TRK987654321
+                      estimatedDeliveryDate: '2023-11-02T17:00:00Z'
+                      shipmentItems:
+                        - skuCode: PROD-001
+                          quantity: 2
+                        - skuCode: PROD-002
+                          quantity: 1
+                      createdAt: '2023-10-25T10:00:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        409:
+          description: Cannot update shipment in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidState:
+                  value:
+                    error:
+                      code: CONFLICT
+                      message: Cannot update a delivered or cancelled shipment.
+                      details: []
+                      traceId: 550e8400-e29b-41d4-a716-446655440000
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /orders:
+    get:
+      tags:
+        - Orders
+      summary: List Orders
+      description: Retrieves a paginated list of all customer orders.
+      operationId: listOrders
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - name: customerRef
+          in: query
+          description: Filter orders by customer ID.
+          required: false
+          schema:
+            $ref: '#/components/schemas/UuidString'
+          example: 11223344-5566-7788-9900-aabbccddeeff
+        - name: statusCode
+          in: query
+          description: Filter orders by status.
+          required: false
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+          example: PENDING
+      responses:
+        200:
+          description: A paginated list of orders.
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/XRateLimitLimit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/XRateLimitRemaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/XRateLimitReset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderListResponse'
+              examples:
+                success:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Orders retrieved successfully.
+                    data:
+                      orders:
+                        - orderId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                          customerRef: 11223344-5566-7788-9900-aabbccddeeff
+                          items:
+                            - skuCode: PROD-001
+                              quantity: 2
+                              unitPrice: 25.99
+                            - skuCode: PROD-002
+                              quantity: 1
+                              unitPrice: 89.99
+                          totalAmount: 141.97
+                          statusCode: PENDING
+                          shippingAddress: 123 Main St, Anytown, USA 12345
+                          createdAt: '2023-10-24T10:00:00Z'
+                          updatedAt: '2023-10-24T10:00:00Z'
+                      pagination:
+                        page: 1
+                        pageSize: 10
+                        totalCount: 1
+                        totalPages: 1
+                        hasNextPage: false
+                        hasPreviousPage: false
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Orders
+      summary: Create Order
+      description: Creates a new customer order.
+      operationId: createOrder
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: Order details to create.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreateRequest'
+            examples:
+              newOrder:
+                value:
+                  customerRef: 11223344-5566-7788-9900-aabbccddeeff
+                  items:
+                    - skuCode: PROD-003
+                      quantity: 1
+                      unitPrice: 49.99
+                  shippingAddress: 456 Oak Ave, Otherville, USA 54321
+      responses:
+        201:
+          description: Order created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+              examples:
+                createdOrder:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Order created successfully.
+                    data:
+                      orderId: 1b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e
+                      customerRef: 11223344-5566-7788-9900-aabbccddeeff
+                      items:
+                        - skuCode: PROD-003
+                          quantity: 1
+                          unitPrice: 49.99
+                      totalAmount: 49.99
+                      statusCode: PENDING
+                      shippingAddress: 456 Oak Ave, Otherville, USA 54321
+                      createdAt: '2023-10-27T10:00:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          description: One or more products in the order not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                productNotFound:
+                  value:
+                    error:
+                      code: NOT_FOUND
+                      message: One or more products in the order items were not found.
+                      details: []
+                      traceId: 550e8400-e29b-41d4-a716-446655440000
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+  /orders/{orderId}:
+    parameters:
+      - name: orderId
+        in: path
+        description: The unique ID of the order.
+        required: true
+        schema:
+          $ref: '#/components/schemas/UuidString'
+        example: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+    get:
+      tags:
+        - Orders
+      summary: Get Order by ID
+      description: Retrieves a single order by its unique ID.
+      operationId: getOrderById
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+      responses:
+        200:
+          description: Order details retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+              examples:
+                orderFound:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Order retrieved successfully.
+                    data:
+                      orderId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                      customerRef: 11223344-5566-7788-9900-aabbccddeeff
+                      items:
+                        - skuCode: PROD-001
+                          quantity: 2
+                          unitPrice: 25.99
+                        - skuCode: PROD-002
+                          quantity: 1
+                          unitPrice: 89.99
+                      totalAmount: 141.97
+                      statusCode: PENDING
+                      shippingAddress: 123 Main St, Anytown, USA 12345
+                      createdAt: '2023-10-24T10:00:00Z'
+                      updatedAt: '2023-10-24T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Orders
+      summary: Update Order Status
+      description: Updates the status of an existing order.
+      operationId: updateOrderStatus
+      parameters:
+        - $ref: '#/components/parameters/XRequestIdHeader'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        description: New status for the order.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderStatusUpdateRequest'
+            examples:
+              updateStatus:
+                value:
+                  statusCode: PROCESSING
+      responses:
+        200:
+          description: Order status updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+              examples:
+                orderStatusUpdated:
+                  value:
+                    eventTimestamp: '2023-10-27T10:00:00Z'
+                    status: SUCCESS
+                    message: Order status updated.
+                    data:
+                      orderId: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+                      customerRef: 11223344-5566-7788-9900-aabbccddeeff
+                      items:
+                        - skuCode: PROD-001
+                          quantity: 2
+                          unitPrice: 25.99
+                        - skuCode: PROD-002
+                          quantity: 1
+                          unitPrice: 89.99
+                      totalAmount: 141.97
+                      statusCode: PROCESSING
+                      shippingAddress: 123 Main St, Anytown, USA 12345
+                      createdAt: '2023-10-24T10:00:00Z'
+                      updatedAt: '2023-10-27T10:00:00Z'
+        400:
+          $ref: '#/components/responses/BadRequest'
+        401:
+          $ref: '#/components/responses/Unauthorized'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        404:
+          $ref: '#/components/responses/NotFound'
+        409:
+          description: Cannot update order in its current state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidState:
+                  value:
+                    error:
+                      code: CONFLICT
+                      message: Cannot update a completed or cancelled order.
+                      details: []
+                      traceId: 550e8400-e29b-41d4-a716-446655440000
+        500:
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token for authentication.
+  headers:
+    XRateLimitLimit:
+      description: The maximum number of requests that the client is permitted to make in a given time window.
+      schema:
+        type: integer
+        example: 100
+    XRateLimitRemaining:
+      description: The number of requests remaining in the current rate limit window.
+      schema:
+        type: integer
+        example: 99
+    XRateLimitReset:
+      description: The time at which the current rate limit window resets in UTC epoch seconds.
+      schema:
+        type: integer
+        example: 1678886400 # March 15, 2023 12:00:00 PM UTC
+  parameters:
+    XRequestIdHeader:
+      name: X-Request-ID
+      in: header
+      description: Unique identifier for the request, used for tracing and debugging. Generated by the client or a gateway.
+      required: false
+      schema:
+        $ref: '#/components/schemas/UuidString'
+      example: 550e8400-e29b-41d4-a716-446655440000
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      description: A unique key that the client provides to ensure that a request can be safely retried without performing the operation multiple times.
+      required: false
+      schema:
+        $ref: '#/components/schemas/UuidString'
+      example: a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
+    PageParam:
+      name: page
+      in: query
+      description: The page number to retrieve (1-indexed).
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      example: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      description: The number of items per page.
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+      example: 10
+  responses:
+    BadRequest:
+      description: Bad Request - Invalid input data.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            validationError:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Invalid input provided.
+                  details:
+                    - field: name
+                      message: 'Name is required.'
+                    - field: quantity
+                      message: 'Quantity must be a positive integer.'
+                  traceId: 550e8400-e29b-41d4-a716-446655440000
+    Unauthorized:
+      description: Unauthorized - Authentication required or invalid token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            unauthorized:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication required.
+                  details: []
+                  traceId: 550e8400-e29b-41d4-a716-446655440000
+    Forbidden:
+      description: Forbidden - Insufficient permissions.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            forbidden:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: You do not have permission to perform this action.
+                  details: []
+                  traceId: 550e8400-e29b-41d4-a716-446655440000
+    NotFound:
+      description: Not Found - The requested resource could not be found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            notFound:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: Resource not found.
+                  details: []
+                  traceId: 550e8400-e29b-41d4-a716-446655440000
+    Conflict:
+      description: Conflict - Resource already exists or state conflict.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            conflict:
+              value:
+                error:
+                  code: CONFLICT
+                  message: A resource with the same identifier already exists.
+                  details: []
+                  traceId: 550e8400-e29b-41d4-a716-446655440000
+    InternalServerError:
+      description: Internal Server Error - An unexpected error occurred on the server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internalError:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: An unexpected error occurred.
+                  details: []
+                  traceId: 550e8400-e29b-41d4-a716-446655440000
+  schemas:
+    # --- Reusable Primitives for Validation ---
+    UuidString:
+      type: string
+      format: uuid
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+      description: A universally unique identifier (UUID v4).
+      example: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+    SkuCodeString:
+      type: string
+      pattern: '^[A-Z0-9-]+$'
+      minLength: 3
+      maxLength: 50
+      description: Unique identifier for a product (SKU).
+      example: PROD-001
+    GenericNameString:
+      type: string
+      minLength: 1
+      maxLength: 255
+      description: A generic name or description string.
+      example: Wireless Mouse
+
+    # --- Standard API Schemas ---
+    ApiResponse:
+      type: object
+      description: Standard API response envelope for successful operations.
+      required:
+        - eventTimestamp
+        - status
+        - message
+        - data
+      properties:
+        eventTimestamp:
+          type: string
+          format: date-time
+          description: The timestamp when the response was generated (ISO 8601).
+          example: '2023-10-27T10:00:00Z'
+        status:
+          type: string
+          enum:
+            - SUCCESS
+            - FAILURE
+            - PARTIAL
+          description: Overall status of the API operation.
+          example: SUCCESS
+        message:
+          type: string
+          description: A human-readable message describing the outcome of the operation.
+          example: Operation completed successfully.
+        data:
+          type: object
+          description: The actual response data, which varies by endpoint.
+          nullable: true
+          example: {}
+    ErrorResponse:
+      type: object
+      description: Standard API error response envelope.
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+    ErrorDetail:
+      type: object
+      description: Detailed information about an error.
+      required:
+        - code
+        - message
+        - traceId
+      properties:
+        code:
+          type: string
+          description: A machine-readable error code.
+          enum:
+            - VALIDATION_ERROR
+            - NOT_FOUND
+            - UNAUTHORIZED
+            - FORBIDDEN
+            - CONFLICT
+            - RATE_LIMITED
+            - INTERNAL_ERROR
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: A human-readable message explaining the error.
+          example: Invalid input provided.
+        details:
+          type: array
+          description: Optional array of specific validation errors or additional context.
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                description: The field that caused the error (for validation errors).
+                example: name
+              message:
+                type: string
+                description: A specific error message for the field.
+                example: Name is required.
+          example:
+            - field: name
+              message: 'Name is required.'
+        traceId:
+          type: string
+          format: uuid
+          description: A unique identifier for the request, useful for debugging.
+          example: 550e8400-e29b-41d4-a716-446655440000
+    Pagination:
+      type: object
+      description: Pagination metadata for list responses.
+      required:
+        - page
+        - pageSize
+        - totalCount
+        - totalPages
+        - hasNextPage
+        - hasPreviousPage
+      properties:
+        page:
+          type: integer
+          description: The current page number (1-indexed).
+          minimum: 1
+          example: 1
+        pageSize:
+          type: integer
+          description: The number of items per page.
+          minimum: 1
+          example: 10
+        totalCount:
+          type: integer
+          description: The total number of items available across all pages.
+          minimum: 0
+          example: 42
+        totalPages:
+          type: integer
+          description: The total number of pages available.
+          minimum: 1
+          example: 5
+        hasNextPage:
+          type: boolean
+          description: Indicates if there are more pages after the current one.
+          example: true
+        hasPreviousPage:
+          type: boolean
+          description: Indicates if there are pages before the current one.
+          example: false
+
+    # --- Domain Enums ---
+    ProductCategory:
+      type: string
+      description: Category of the product.
+      enum:
+        - ELECTRONICS
+        - PERIPHERALS
+        - ACCESSORIES
+        - CLOTHING
+        - BOOKS
+        - HOME_GOODS
+        - OTHER
+      example: ELECTRONICS
+    StockTransferStatus:
+      type: string
+      description: Current status of a stock transfer.
+      enum:
+        - PENDING
+        - IN_TRANSIT
+        - COMPLETED
+        - CANCELLED
+        - FAILED
+      example: IN_TRANSIT
+    ShipmentStatus:
+      type: string
+      description: Current status of a shipment.
+      enum:
+        - PENDING
+        - PACKING
+        - SHIPPED
+        - IN_TRANSIT
+        - DELIVERED
+        - CANCELLED
+        - RETURNED
+      example: SHIPPED
+    OrderStatus:
+      type: string
+      description: Current status of a customer order.
+      enum:
+        - PENDING
+        - PROCESSING
+        - SHIPPED
+        - DELIVERED
+        - CANCELLED
+        - REFUNDED
+      example: PENDING
+
+    # --- Domain Entities ---
+    Product:
+      type: object
+      description: Represents a product in the catalog.
+      required:
+        - skuCode
+        - name
+        - unitPrice
+        - category
+        - createdAt
+        - updatedAt
+      properties:
+        skuCode:
+          $ref: '#/components/schemas/SkuCodeString'
+        name:
+          $ref: '#/components/schemas/GenericNameString'
+        unitPrice:
+          type: number
+          format: float
+          description: The price of a single unit of the product.
+          minimum: 0
+          example: 25.99
+        category:
+          $ref: '#/components/schemas/ProductCategory'
+        description:
+          type: string
+          description: Detailed description of the product.
+          nullable: true
+          example: Ergonomic wireless mouse with adjustable DPI.
+        stockQuantity:
+          type: integer
+          description: Available stock quantity across all warehouses.
+          minimum: 0
+          nullable: true
+          example: 150
+        imageUrl:
+          type: string
+          format: uri
+          description: URL to the primary image of the product.
+          nullable: true
+          example: https://example.com/images/mouse.jpg
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the product was created (ISO 8601).
+          example: '2023-01-15T10:30:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the product was last updated (ISO 8601).
+          example: '2023-09-20T14:00:00Z'
+    ProductCreateRequest:
+      type: object
+      description: Request body for creating a new product.
+      required:
+        - skuCode
+        - name
+        - unitPrice
+        - category
+      properties:
+        skuCode:
+          $ref: '#/components/schemas/SkuCodeString'
+        name:
+          $ref: '#/components/schemas/GenericNameString'
+        unitPrice:
+          type: number
+          format: float
+          description: The price of a single unit of the product.
+          minimum: 0
+          example: 49.99
+        category:
+          $ref: '#/components/schemas/ProductCategory'
+        description:
+          type: string
+          description: Detailed description of the product.
+          nullable: true
+          example: 7-in-1 USB-C hub with HDMI, USB 3.0, and PD.
+        stockQuantity:
+          type: integer
+          description: Initial stock quantity for the product.
+          minimum: 0
+          default: 0
+          example: 200
+        imageUrl:
+          type: string
+          format: uri
+          description: URL to the primary image of the product.
+          nullable: true
+          example: https://example.com/images/usbc-hub.jpg
+    ProductUpdateRequest:
+      type: object
+      description: Request body for partially updating an existing product.
+      properties:
+        name:
+          $ref: '#/components/schemas/GenericNameString'
+        unitPrice:
+          type: number
+          format: float
+          description: The price of a single unit of the product.
+          minimum: 0
+          example: 35.99
+        category:
+          $ref: '#/components/schemas/ProductCategory'
+        description:
+          type: string
+          description: Detailed description of the product.
+          nullable: true
+          example: High-performance wireless gaming mouse with customizable RGB.
+        stockQuantity:
+          type: integer
+          description: Available stock quantity across all warehouses.
+          minimum: 0
+          example: 120
+        imageUrl:
+          type: string
+          format: uri
+          description: URL to the primary image of the product.
+          nullable: true
+          example: https://example.com/images/gaming-mouse.jpg
+    ProductResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Product'
+    ProductListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - products
+                - pagination
+              properties:
+                products:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Product'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    Warehouse:
+      type: object
+      description: Represents a physical warehouse location.
+      required:
+        - warehouseId
+        - name
+        - location
+        - capacityCubicFeet
+        - createdAt
+        - updatedAt
+      properties:
+        warehouseId:
+          $ref: '#/components/schemas/UuidString'
+        name:
+          $ref: '#/components/schemas/GenericNameString'
+        location:
+          type: string
+          description: Physical location of the warehouse (e.g., city, state, country).
+          minLength: 1
+          maxLength: 255
+          example: New York, NY
+        capacityCubicFeet:
+          type: integer
+          description: Storage capacity of the warehouse in cubic feet.
+          minimum: 0
+          example: 100000
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the warehouse record was created (ISO 8601).
+          example: '2022-05-01T08:00:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the warehouse record was last updated (ISO 8601).
+          example: '2023-09-10T12:00:00Z'
+    WarehouseCreateRequest:
+      type: object
+      description: Request body for creating a new warehouse.
+      required:
+        - name
+        - location
+        - capacityCubicFeet
+      properties:
+        name:
+          $ref: '#/components/schemas/GenericNameString'
+        location:
+          type: string
+          description: Physical location of the warehouse (e.g., city, state, country).
+          minLength: 1
+          maxLength: 255
+          example: Chicago, IL
+        capacityCubicFeet:
+          type: integer
+          description: Storage capacity of the warehouse in cubic feet.
+          minimum: 0
+          example: 50000
+    WarehouseResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Warehouse'
+    WarehouseListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - warehouses
+                - pagination
+              properties:
+                warehouses:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Warehouse'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    StockItem:
+      type: object
+      description: Represents a specific product's stock level within a single warehouse.
+      required:
+        - stockItemId
+        - skuCode
+        - warehouseId
+        - quantity
+        - createdAt
+        - updatedAt
+      properties:
+        stockItemId:
+          $ref: '#/components/schemas/UuidString'
+        skuCode:
+          $ref: '#/components/schemas/SkuCodeString'
+        warehouseId:
+          $ref: '#/components/schemas/UuidString'
+        quantity:
+          type: integer
+          description: The current quantity of the product in this warehouse.
+          minimum: 0
+          example: 150
+        lastMovedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the stock quantity was last moved or adjusted (ISO 8601).
+          nullable: true
+          example: '2023-10-25T10:00:00Z'
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the stock item record was created (ISO 8601).
+          example: '2023-01-15T10:30:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the stock item record was last updated (ISO 8601).
+          example: '2023-10-25T10:00:00Z'
+    StockItemAdjustRequest:
+      type: object
+      description: Request body for adjusting a stock item's quantity.
+      required:
+        - quantity
+      properties:
+        quantity:
+          type: integer
+          description: The new quantity for the stock item. Must be non-negative.
+          minimum: 0
+          example: 145
+    StockItemResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/StockItem'
+    StockItemListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - stockItems
+                - pagination
+              properties:
+                stockItems:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/StockItem'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    StockTransfer:
+      type: object
+      description: Represents a transfer of stock between two warehouses.
+      required:
+        - transferId
+        - skuCode
+        - fromWarehouseId
+        - toWarehouseId
+        - quantity
+        - statusCode
+        - transferDate
+        - createdAt
+        - updatedAt
+      properties:
+        transferId:
+          $ref: '#/components/schemas/UuidString'
+        skuCode:
+          $ref: '#/components/schemas/SkuCodeString'
+        fromWarehouseId:
+          $ref: '#/components/schemas/UuidString'
+        toWarehouseId:
+          $ref: '#/components/schemas/UuidString'
+        quantity:
+          type: integer
+          description: The quantity of the product being transferred.
+          minimum: 1
+          example: 50
+        statusCode:
+          $ref: '#/components/schemas/StockTransferStatus'
+        transferDate:
+          type: string
+          format: date-time
+          description: The date and time the transfer was initiated or scheduled (ISO 8601).
+          example: '2023-10-20T09:00:00Z'
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the transfer record was created (ISO 8601).
+          example: '2023-10-19T15:00:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the transfer record was last updated (ISO 8601).
+          example: '2023-10-20T09:00:00Z'
+    StockTransferCreateRequest:
+      type: object
+      description: Request body for creating a new stock transfer.
+      required:
+        - skuCode
+        - fromWarehouseId
+        - toWarehouseId
+        - quantity
+      properties:
+        skuCode:
+          $ref: '#/components/schemas/SkuCodeString'
+        fromWarehouseId:
+          $ref: '#/components/schemas/UuidString'
+        toWarehouseId:
+          $ref: '#/components/schemas/UuidString'
+        quantity:
+          type: integer
+          description: The quantity of the product to transfer.
+          minimum: 1
+          example: 100
+    StockTransferUpdateRequest:
+      type: object
+      description: Request body for updating a stock transfer's status.
+      required:
+        - statusCode
+      properties:
+        statusCode:
+          $ref: '#/components/schemas/StockTransferStatus'
+    StockTransferResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/StockTransfer'
+    StockTransferListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - stockTransfers
+                - pagination
+              properties:
+                stockTransfers:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/StockTransfer'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    ShipmentItem:
+      type: object
+      description: Represents a single item within a shipment.
+      required:
+        - skuCode
+        - quantity
+      properties:
+        skuCode:
+          $ref: '#/components/schemas/SkuCodeString'
+        quantity:
+          type: integer
+          description: The quantity of this product in the shipment.
+          minimum: 1
+          example: 2
+    Shipment:
+      type: object
+      description: Represents an outbound shipment of products.
+      required:
+        - shipmentId
+        - orderId
+        - originWarehouseId
+        - destinationAddress
+        - statusCode
+        - shipmentItems
+        - createdAt
+        - updatedAt
+      properties:
+        shipmentId:
+          $ref: '#/components/schemas/UuidString'
+        orderId:
+          $ref: '#/components/schemas/UuidString'
+          description: The ID of the customer order associated with this shipment.
+          nullable: true
+          example: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+        originWarehouseId:
+          $ref: '#/components/schemas/UuidString'
+        destinationAddress:
+          type: string
+          description: The full shipping address for the shipment.
+          example: 123 Main St, Anytown, USA 12345
+        statusCode:
+          $ref: '#/components/schemas/ShipmentStatus'
+        trackingNumber:
+          type: string
+          description: The tracking number provided by the carrier.
+          nullable: true
+          example: TRK123456789
+        estimatedDeliveryDate:
+          type: string
+          format: date-time
+          description: The estimated date and time of delivery (ISO 8601).
+          nullable: true
+          example: '2023-11-01T17:00:00Z'
+        shipmentItems:
+          type: array
+          description: List of products included in this shipment.
+          items:
+            $ref: '#/components/schemas/ShipmentItem'
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the shipment record was created (ISO 8601).
+          example: '2023-10-25T10:00:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the shipment record was last updated (ISO 8601).
+          example: '2023-10-26T14:00:00Z'
+    ShipmentCreateRequest:
+      type: object
+      description: Request body for creating a new shipment.
+      required:
+        - orderId
+        - originWarehouseId
+        - destinationAddress
+        - shipmentItems
+      properties:
+        orderId:
+          $ref: '#/components/schemas/UuidString'
+          description: The ID of the customer order associated with this shipment.
+          example: 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d
+        originWarehouseId:
+          $ref: '#/components/schemas/UuidString'
+        destinationAddress:
+          type: string
+          description: The full shipping address for the shipment.
+          example: 123 Main St, Anytown, USA 12345
+        shipmentItems:
+          type: array
+          description: List of products to include in this shipment.
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ShipmentItem'
+    ShipmentUpdateRequest:
+      type: object
+      description: Request body for partially updating a shipment.
+      properties:
+        statusCode:
+          $ref: '#/components/schemas/ShipmentStatus'
+        trackingNumber:
+          type: string
+          description: The tracking number provided by the carrier.
+          nullable: true
+          example: TRK987654321
+        estimatedDeliveryDate:
+          type: string
+          format: date-time
+          description: The estimated date and time of delivery (ISO 8601).
+          nullable: true
+          example: '2023-11-02T17:00:00Z'
+    ShipmentResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Shipment'
+    ShipmentListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - shipments
+                - pagination
+              properties:
+                shipments:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Shipment'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
+
+    OrderItem:
+      type: object
+      description: Represents a single item within a customer order.
+      required:
+        - skuCode
+        - quantity
+        - unitPrice
+      properties:
+        skuCode:
+          $ref: '#/components/schemas/SkuCodeString'
+        quantity:
+          type: integer
+          description: The quantity of this product ordered.
+          minimum: 1
+          example: 2
+        unitPrice:
+          type: number
+          format: float
+          description: The price of a single unit of the product at the time of order.
+          minimum: 0
+          example: 25.99
+    Order:
+      type: object
+      description: Represents a customer order.
+      required:
+        - orderId
+        - customerRef
+        - items
+        - totalAmount
+        - statusCode
+        - shippingAddress
+        - createdAt
+        - updatedAt
+      properties:
+        orderId:
+          $ref: '#/components/schemas/UuidString'
+        customerRef:
+          $ref: '#/components/schemas/UuidString'
+          description: The unique identifier of the customer who placed the order.
+          example: 11223344-5566-7788-9900-aabbccddeeff
+        items:
+          type: array
+          description: List of products and quantities in the order.
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        totalAmount:
+          type: number
+          format: float
+          description: The total monetary amount of the order.
+          minimum: 0
+          example: 141.97
+        statusCode:
+          $ref: '#/components/schemas/OrderStatus'
+        shippingAddress:
+          type: string
+          description: The full shipping address for the order.
+          example: 123 Main St, Anytown, USA 12345
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the order was created (ISO 8601).
+          example: '2023-10-24T10:00:00Z'
+        updatedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the order was last updated (ISO 8601).
+          example: '2023-10-24T10:00:00Z'
+    OrderCreateRequest:
+      type: object
+      description: Request body for creating a new order.
+      required:
+        - customerRef
+        - items
+        - shippingAddress
+      properties:
+        customerRef:
+          $ref: '#/components/schemas/UuidString'
+          description: The unique identifier of the customer placing the order.
+          example: 11223344-5566-7788-9900-aabbccddeeff
+        items:
+          type: array
+          description: List of products and quantities for the order.
+          minItems: 1
+          items:
+            type: object
+            required:
+              - skuCode
+              - quantity
+            properties:
+              skuCode:
+                $ref: '#/components/schemas/SkuCodeString'
+              quantity:
+                type: integer
+                description: The quantity of this product.
+                minimum: 1
+                example: 1
+        shippingAddress:
+          type: string
+          description: The full shipping address for the order.
+          example: 456 Oak Ave, Otherville, USA 54321
+    OrderStatusUpdateRequest:
+      type: object
+      description: Request body for updating an order's status.
+      required:
+        - statusCode
+      properties:
+        statusCode:
+          $ref: '#/components/schemas/OrderStatus'
+    OrderResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Order'
+    OrderListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: object
+              required:
+                - orders
+                - pagination
+              properties:
+                orders:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Order'
+                pagination:
+                  $ref: '#/components/schemas/Pagination'
