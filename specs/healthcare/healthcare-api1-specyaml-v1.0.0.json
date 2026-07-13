@@ -1,0 +1,3278 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Healthcare API",
+    "description": "A comprehensive API for managing patient, provider, appointment, diagnosis, prescription, and medical record data within a healthcare system. Adheres to HIPAA compliance requirements, ensuring secure and auditable access to Protected Health Information (PHI). All PHI access is logged for audit trails, and data is encrypted at rest and in transit. Access is controlled via OAuth 2.0 with role-based authorization.\n\n**Service Level Agreements (SLAs):**\nThis API aims for 99.9% uptime. Typical response times are under 200ms for read operations and under 500ms for write operations. Individual endpoint timeouts are generally configured for 30 seconds. For critical operations, clients should implement appropriate retry mechanisms with exponential backoff.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "API Support",
+      "url": "https://healthcare.example.com/support",
+      "email": "support@healthcare.example.com"
+    },
+    "license": {
+      "name": "Apache 2.0",
+      "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.healthcare.example.com/v1",
+      "description": "Production server"
+    },
+    {
+      "url": "https://api.dev.healthcare.example.com/v1",
+      "description": "Development server"
+    }
+  ],
+  "security": [
+    {
+      "OAuth2": [
+        "patient:read",
+        "patient:write",
+        "provider:read",
+        "provider:write",
+        "admin:manage"
+      ]
+    }
+  ],
+  "tags": [
+    {
+      "name": "Patients",
+      "description": "Operations related to patient management and their associated data."
+    },
+    {
+      "name": "Providers",
+      "description": "Operations related to healthcare providers."
+    },
+    {
+      "name": "Appointments",
+      "description": "Operations for scheduling and managing patient appointments."
+    },
+    {
+      "name": "Diagnoses",
+      "description": "Operations for managing patient diagnoses."
+    },
+    {
+      "name": "Prescriptions",
+      "description": "Operations for managing patient prescriptions."
+    },
+    {
+      "name": "Medical Records",
+      "description": "Operations for managing patient medical records and documents."
+    },
+    {
+      "name": "Consents",
+      "description": "Operations for managing patient data sharing consents."
+    },
+    {
+      "name": "System",
+      "description": "System-level operations like health checks."
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Checks the health and availability of the API. Returns 200 OK if the service is running and able to connect to its dependencies.",
+        "operationId": "getHealthStatus",
+        "tags": [
+          "System"
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API is healthy and operational.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "UP",
+                        "DOWN"
+                      ],
+                      "example": "UP"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2023-10-27T10:00:00Z"
+                    }
+                  }
+                },
+                "examples": {
+                  "healthyResponse": {
+                    "value": {
+                      "status": "UP",
+                      "timestamp": "2023-10-27T10:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable - API is not healthy or dependencies are down.",
+            "headers": {
+              "$ref": "#/components/responses/ErrorResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "serviceUnavailable": {
+                    "value": {
+                      "error": {
+                        "code": "SERVICE_UNAVAILABLE",
+                        "message": "One or more critical dependencies are unavailable.",
+                        "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/patients": {
+      "get": {
+        "summary": "List all patients",
+        "description": "Retrieves a paginated list of all patients. This endpoint is restricted and requires appropriate roles (e.g., 'admin', 'provider'). Patient data is sensitive and access is logged for HIPAA compliance.",
+        "operationId": "listPatients",
+        "tags": [
+          "Patients"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "admin:manage",
+              "provider:read"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of items to return per page.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "example": 20
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of items to skip before starting to collect the result set.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "firstName",
+            "in": "query",
+            "description": "Filter patients by first name (case-insensitive, partial match).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 50
+            },
+            "example": "John"
+          },
+          {
+            "name": "lastName",
+            "in": "query",
+            "description": "Filter patients by last name (case-insensitive, partial match).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 50
+            },
+            "example": "Doe"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of patients.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientListResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:00:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Patients retrieved successfully.",
+                      "data": {
+                        "patients": [
+                          {
+                            "patientId": "pat_12345",
+                            "firstName": "John",
+                            "lastName": "Doe",
+                            "dateOfBirth": "1980-01-15",
+                            "gender": "Male",
+                            "contactInfo": {
+                              "email": "john.doe@example.com",
+                              "phone": "+15551234567"
+                            },
+                            "address": {
+                              "street": "123 Main St",
+                              "city": "Anytown",
+                              "state": "CA",
+                              "zipCode": "90210"
+                            },
+                            "insuranceId": "INS-987654",
+                            "createdAt": "2023-01-01T10:00:00Z",
+                            "updatedAt": "2023-01-01T10:00:00Z"
+                          },
+                          {
+                            "patientId": "pat_67890",
+                            "firstName": "Jane",
+                            "lastName": "Smith",
+                            "dateOfBirth": "1992-05-20",
+                            "gender": "Female",
+                            "contactInfo": {
+                              "email": "jane.smith@example.com",
+                              "phone": "+15559876543"
+                            },
+                            "address": {
+                              "street": "456 Oak Ave",
+                              "city": "Anytown",
+                              "state": "CA",
+                              "zipCode": "90210"
+                            },
+                            "insuranceId": "INS-123456",
+                            "createdAt": "2023-02-10T11:00:00Z",
+                            "updatedAt": "2023-02-10T11:00:00Z"
+                          }
+                        ],
+                        "totalCount": 2,
+                        "limit": 20,
+                        "offset": 0,
+                        "hasNextPage": false,
+                        "hasPreviousPage": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new patient record",
+        "description": "Registers a new patient in the system. Requires 'admin' or 'provider:write' role. All patient data is considered PHI and is handled with strict security measures.",
+        "operationId": "createPatient",
+        "tags": [
+          "Patients"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "admin:manage",
+              "provider:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "requestBody": {
+          "description": "Patient data to be created.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePatientRequest"
+              },
+              "examples": {
+                "newPatient": {
+                  "value": {
+                    "firstName": "Alice",
+                    "lastName": "Johnson",
+                    "dateOfBirth": "1975-11-22",
+                    "gender": "Female",
+                    "contactInfo": {
+                      "email": "alice.johnson@example.com",
+                      "phone": "+15551112222"
+                    },
+                    "address": {
+                      "street": "789 Pine Ln",
+                      "city": "Anytown",
+                      "state": "CA",
+                      "zipCode": "90210"
+                    },
+                    "insuranceId": "INS-333444"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Patient created successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:05:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Patient created successfully.",
+                      "data": {
+                        "patientId": "pat_abcde",
+                        "firstName": "Alice",
+                        "lastName": "Johnson",
+                        "dateOfBirth": "1975-11-22",
+                        "gender": "Female",
+                        "contactInfo": {
+                          "email": "alice.johnson@example.com",
+                          "phone": "+15551112222"
+                        },
+                        "address": {
+                          "street": "789 Pine Ln",
+                          "city": "Anytown",
+                          "state": "CA",
+                          "zipCode": "90210"
+                        },
+                        "insuranceId": "INS-333444",
+                        "createdAt": "2023-10-27T10:05:00Z",
+                        "updatedAt": "2023-10-27T10:05:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/patients/{patientId}": {
+      "get": {
+        "summary": "Get a patient record by ID",
+        "description": "Retrieves a single patient's detailed record by their unique ID. Access is restricted to authorized roles (e.g., 'admin', 'provider', or the 'patient' themselves). All access is logged for HIPAA compliance.",
+        "operationId": "getPatientById",
+        "tags": [
+          "Patients"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "patient:read",
+              "provider:read",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "name": "patientId",
+            "in": "path",
+            "description": "Unique identifier of the patient.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pat_[a-zA-Z0-9]{5,}$"
+            },
+            "example": "pat_12345"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Patient record retrieved successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:10:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Patient retrieved successfully.",
+                      "data": {
+                        "patientId": "pat_12345",
+                        "firstName": "John",
+                        "lastName": "Doe",
+                        "dateOfBirth": "1980-01-15",
+                        "gender": "Male",
+                        "contactInfo": {
+                          "email": "john.doe@example.com",
+                          "phone": "+15551234567"
+                        },
+                        "address": {
+                          "street": "123 Main St",
+                          "city": "Anytown",
+                          "state": "CA",
+                          "zipCode": "90210"
+                        },
+                        "insuranceId": "INS-987654",
+                        "createdAt": "2023-01-01T10:00:00Z",
+                        "updatedAt": "2023-01-01T10:00:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update a patient record by ID",
+        "description": "Updates an existing patient's record. Requires 'admin' or 'provider:write' role. All updates are logged for HIPAA compliance.",
+        "operationId": "updatePatient",
+        "tags": [
+          "Patients"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "admin:manage",
+              "provider:write"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
+            "name": "patientId",
+            "in": "path",
+            "description": "Unique identifier of the patient.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pat_[a-zA-Z0-9]{5,}$"
+            },
+            "example": "pat_12345"
+          }
+        ],
+        "requestBody": {
+          "description": "Patient data to be updated.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePatientRequest"
+              },
+              "examples": {
+                "updatePatient": {
+                  "value": {
+                    "contactInfo": {
+                      "email": "john.doe.new@example.com",
+                      "phone": "+15559998888"
+                    },
+                    "address": {
+                      "street": "321 New St",
+                      "city": "Newtown",
+                      "state": "NY",
+                      "zipCode": "10001"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Patient record updated successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PatientResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:15:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Patient updated successfully.",
+                      "data": {
+                        "patientId": "pat_12345",
+                        "firstName": "John",
+                        "lastName": "Doe",
+                        "dateOfBirth": "1980-01-15",
+                        "gender": "Male",
+                        "contactInfo": {
+                          "email": "john.doe.new@example.com",
+                          "phone": "+15559998888"
+                        },
+                        "address": {
+                          "street": "321 New St",
+                          "city": "Newtown",
+                          "state": "NY",
+                          "zipCode": "10001"
+                        },
+                        "insuranceId": "INS-987654",
+                        "createdAt": "2023-01-01T10:00:00Z",
+                        "updatedAt": "2023-10-27T10:15:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a patient record by ID",
+        "description": "Deletes a patient record from the system. This operation is highly sensitive and typically restricted to 'admin' roles. Deletion is soft or requires specific data retention policies. All deletions are logged for HIPAA compliance.",
+        "operationId": "deletePatient",
+        "tags": [
+          "Patients"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "name": "patientId",
+            "in": "path",
+            "description": "Unique identifier of the patient to be deleted.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pat_[a-zA-Z0-9]{5,}$"
+            },
+            "example": "pat_12345"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Patient record deleted successfully (no content).",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {}
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/patients/{patientId}/appointments": {
+      "get": {
+        "summary": "List appointments for a specific patient",
+        "description": "Retrieves a paginated list of appointments associated with a given patient ID. Access is restricted to the patient themselves, their providers, or administrators. All access is logged for HIPAA compliance.",
+        "operationId": "listPatientAppointments",
+        "tags": [
+          "Appointments",
+          "Patients"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "patient:read",
+              "provider:read",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "name": "patientId",
+            "in": "path",
+            "description": "Unique identifier of the patient.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pat_[a-zA-Z0-9]{5,}$"
+            },
+            "example": "pat_12345"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of items to return per page.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "example": 20
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of items to skip before starting to collect the result set.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "statusCode",
+            "in": "query",
+            "description": "Filter appointments by status code (e.g., 'scheduled', 'completed', 'cancelled').",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "scheduled",
+                "completed",
+                "cancelled",
+                "pending"
+              ]
+            },
+            "example": "scheduled"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of patient appointments.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentListResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:20:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Appointments retrieved successfully.",
+                      "data": {
+                        "appointments": [
+                          {
+                            "appointmentId": "app_001",
+                            "patientId": "pat_12345",
+                            "providerId": "prov_A1",
+                            "scheduledAt": "2023-11-01T10:00:00Z",
+                            "appointmentType": "Consultation",
+                            "statusCode": "scheduled",
+                            "notes": "First consultation for general check-up.",
+                            "createdAt": "2023-10-20T09:00:00Z",
+                            "updatedAt": "2023-10-20T09:00:00Z"
+                          },
+                          {
+                            "appointmentId": "app_002",
+                            "patientId": "pat_12345",
+                            "providerId": "prov_B2",
+                            "scheduledAt": "2023-10-15T14:30:00Z",
+                            "appointmentType": "Follow-up",
+                            "statusCode": "completed",
+                            "notes": "Follow-up on lab results.",
+                            "createdAt": "2023-10-01T10:00:00Z",
+                            "updatedAt": "2023-10-15T14:30:00Z"
+                          }
+                        ],
+                        "totalCount": 2,
+                        "limit": 20,
+                        "offset": 0,
+                        "hasNextPage": false,
+                        "hasPreviousPage": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/patients/{patientId}/medical-records": {
+      "get": {
+        "summary": "List medical records for a specific patient",
+        "description": "Retrieves a paginated list of medical records associated with a given patient ID. Access is highly restricted and logged for HIPAA compliance. Only authorized personnel (e.g., 'provider', 'admin') or the 'patient' themselves can access these records.",
+        "operationId": "listPatientMedicalRecords",
+        "tags": [
+          "Medical Records",
+          "Patients"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "patient:read",
+              "provider:read",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "name": "patientId",
+            "in": "path",
+            "description": "Unique identifier of the patient.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pat_[a-zA-Z0-9]{5,}$"
+            },
+            "example": "pat_12345"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of items to return per page.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "example": 20
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of items to skip before starting to collect the result set.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "recordType",
+            "in": "query",
+            "description": "Filter medical records by type (e.g., 'lab_result', 'progress_note').",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "lab_result",
+                "progress_note",
+                "imaging_report",
+                "discharge_summary"
+              ]
+            },
+            "example": "lab_result"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of patient medical records.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MedicalRecordListResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:25:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Medical records retrieved successfully.",
+                      "data": {
+                        "medicalRecords": [
+                          {
+                            "recordId": "rec_001",
+                            "patientId": "pat_12345",
+                            "providerId": "prov_A1",
+                            "recordType": "lab_result",
+                            "content": "Blood test results: Hemoglobin 14.5 g/dL, White Blood Cell Count 7.2 K/uL.",
+                            "createdAt": "2023-09-01T08:30:00Z",
+                            "updatedAt": "2023-09-01T08:30:00Z"
+                          },
+                          {
+                            "recordId": "rec_002",
+                            "patientId": "pat_12345",
+                            "providerId": "prov_A1",
+                            "recordType": "progress_note",
+                            "content": "Patient presented with mild fever and cough. Prescribed antibiotics.",
+                            "createdAt": "2023-09-05T11:00:00Z",
+                            "updatedAt": "2023-09-05T11:00:00Z"
+                          }
+                        ],
+                        "totalCount": 2,
+                        "limit": 20,
+                        "offset": 0,
+                        "hasNextPage": false,
+                        "hasPreviousPage": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/patients/{patientId}/consents": {
+      "post": {
+        "summary": "Grant patient consent for data sharing",
+        "description": "Records a new consent from a patient for specific data sharing purposes. This is crucial for HIPAA compliance and patient autonomy. Requires 'patient:write' or 'admin:manage' role.",
+        "operationId": "grantPatientConsent",
+        "tags": [
+          "Consents",
+          "Patients"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "patient:write",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
+            "name": "patientId",
+            "in": "path",
+            "description": "Unique identifier of the patient.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pat_[a-zA-Z0-9]{5,}$"
+            },
+            "example": "pat_12345"
+          }
+        ],
+        "requestBody": {
+          "description": "Consent details to be recorded.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConsentRequest"
+              },
+              "examples": {
+                "newConsent": {
+                  "value": {
+                    "dataSharingPurpose": "Research Study X",
+                    "expiresAt": "2024-12-31T23:59:59Z",
+                    "grantedBy": "patient"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Consent granted successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:30:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Consent granted successfully.",
+                      "data": {
+                        "consentId": "con_001",
+                        "patientId": "pat_12345",
+                        "dataSharingPurpose": "Research Study X",
+                        "grantedAt": "2023-10-27T10:30:00Z",
+                        "expiresAt": "2024-12-31T23:59:59Z",
+                        "isRevoked": false,
+                        "grantedBy": "patient",
+                        "createdAt": "2023-10-27T10:30:00Z",
+                        "updatedAt": "2023-10-27T10:30:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/providers": {
+      "get": {
+        "summary": "List all healthcare providers",
+        "description": "Retrieves a paginated list of all healthcare providers. Can be filtered by specialty. Requires 'patient:read', 'provider:read', or 'admin:manage' role.",
+        "operationId": "listProviders",
+        "tags": [
+          "Providers"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "patient:read",
+              "provider:read",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of items to return per page.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "example": 20
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Number of items to skip before starting to collect the result set.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0,
+              "default": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "specialty",
+            "in": "query",
+            "description": "Filter providers by their medical specialty (e.g., 'Cardiology', 'Pediatrics').",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 50
+            },
+            "example": "Cardiology"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of providers.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderListResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:35:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Providers retrieved successfully.",
+                      "data": {
+                        "providers": [
+                          {
+                            "providerId": "prov_A1",
+                            "name": "Dr. Emily White",
+                            "specialty": "General Practice",
+                            "licenseNumber": "LIC-GP-12345",
+                            "facilityId": "fac_XYZ",
+                            "contactInfo": {
+                              "email": "emily.white@example.com",
+                              "phone": "+15553334444"
+                            },
+                            "createdAt": "2022-01-01T09:00:00Z",
+                            "updatedAt": "2022-01-01T09:00:00Z"
+                          },
+                          {
+                            "providerId": "prov_B2",
+                            "name": "Dr. Michael Green",
+                            "specialty": "Cardiology",
+                            "licenseNumber": "LIC-CARD-67890",
+                            "facilityId": "fac_XYZ",
+                            "contactInfo": {
+                              "email": "michael.green@example.com",
+                              "phone": "+15555556666"
+                            },
+                            "createdAt": "2022-02-01T10:00:00Z",
+                            "updatedAt": "2022-02-01T10:00:00Z"
+                          }
+                        ],
+                        "totalCount": 2,
+                        "limit": 20,
+                        "offset": 0,
+                        "hasNextPage": false,
+                        "hasPreviousPage": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/appointments": {
+      "post": {
+        "summary": "Schedule a new appointment",
+        "description": "Creates a new appointment for a patient with a provider. Requires 'patient:write' (for self-scheduling) or 'provider:write' / 'admin:manage' roles. All appointment details are logged.",
+        "operationId": "scheduleAppointment",
+        "tags": [
+          "Appointments"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "patient:write",
+              "provider:write",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "requestBody": {
+          "description": "Appointment details to be scheduled.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAppointmentRequest"
+              },
+              "examples": {
+                "newAppointment": {
+                  "value": {
+                    "patientId": "pat_12345",
+                    "providerId": "prov_A1",
+                    "scheduledAt": "2023-11-15T11:00:00Z",
+                    "appointmentType": "Follow-up",
+                    "notes": "Discuss recent lab results."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Appointment scheduled successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:40:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Appointment scheduled successfully.",
+                      "data": {
+                        "appointmentId": "app_003",
+                        "patientId": "pat_12345",
+                        "providerId": "prov_A1",
+                        "scheduledAt": "2023-11-15T11:00:00Z",
+                        "appointmentType": "Follow-up",
+                        "statusCode": "scheduled",
+                        "notes": "Discuss recent lab results.",
+                        "createdAt": "2023-10-27T10:40:00Z",
+                        "updatedAt": "2023-10-27T10:40:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/appointments/{appointmentId}": {
+      "get": {
+        "summary": "Get an appointment by ID",
+        "description": "Retrieves details of a specific appointment by its unique ID. Access is restricted to involved parties (patient, provider) or administrators.",
+        "operationId": "getAppointmentById",
+        "tags": [
+          "Appointments"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "patient:read",
+              "provider:read",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "name": "appointmentId",
+            "in": "path",
+            "description": "Unique identifier of the appointment.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^app_[a-zA-Z0-9]{3,}$"
+            },
+            "example": "app_001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Appointment details retrieved successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:45:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Appointment retrieved successfully.",
+                      "data": {
+                        "appointmentId": "app_001",
+                        "patientId": "pat_12345",
+                        "providerId": "prov_A1",
+                        "scheduledAt": "2023-11-01T10:00:00Z",
+                        "appointmentType": "Consultation",
+                        "statusCode": "scheduled",
+                        "notes": "First consultation for general check-up.",
+                        "createdAt": "2023-10-20T09:00:00Z",
+                        "updatedAt": "2023-10-20T09:00:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update an appointment's status or notes",
+        "description": "Partially updates an existing appointment's details, such as status or notes. Requires 'provider:write' or 'admin:manage' role. Patients might be able to cancel their own appointments.",
+        "operationId": "updateAppointment",
+        "tags": [
+          "Appointments"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "patient:write",
+              "provider:write",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
+            "name": "appointmentId",
+            "in": "path",
+            "description": "Unique identifier of the appointment to be updated.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^app_[a-zA-Z0-9]{3,}$"
+            },
+            "example": "app_001"
+          }
+        ],
+        "requestBody": {
+          "description": "Partial appointment data to be updated.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAppointmentRequest"
+              },
+              "examples": {
+                "updateAppointmentStatus": {
+                  "value": {
+                    "statusCode": "cancelled",
+                    "notes": "Patient requested cancellation."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Appointment updated successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:50:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Appointment updated successfully.",
+                      "data": {
+                        "appointmentId": "app_001",
+                        "patientId": "pat_12345",
+                        "providerId": "prov_A1",
+                        "scheduledAt": "2023-11-01T10:00:00Z",
+                        "appointmentType": "Consultation",
+                        "statusCode": "cancelled",
+                        "notes": "Patient requested cancellation.",
+                        "createdAt": "2023-10-20T09:00:00Z",
+                        "updatedAt": "2023-10-27T10:50:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/prescriptions": {
+      "post": {
+        "summary": "Create a new prescription",
+        "description": "Issues a new prescription for a patient. Requires 'provider:write' or 'admin:manage' role. All prescription details are sensitive PHI and are logged.",
+        "operationId": "createPrescription",
+        "tags": [
+          "Prescriptions"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "provider:write",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "requestBody": {
+          "description": "Prescription details to be created.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePrescriptionRequest"
+              },
+              "examples": {
+                "newPrescription": {
+                  "value": {
+                    "patientId": "pat_12345",
+                    "providerId": "prov_A1",
+                    "medicationName": "Amoxicillin",
+                    "dosage": "500mg",
+                    "frequency": "Three times daily",
+                    "refillsRemaining": 2
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Prescription created successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrescriptionResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:55:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Prescription created successfully.",
+                      "data": {
+                        "prescriptionId": "pres_001",
+                        "patientId": "pat_12345",
+                        "providerId": "prov_A1",
+                        "medicationName": "Amoxicillin",
+                        "dosage": "500mg",
+                        "frequency": "Three times daily",
+                        "prescribedAt": "2023-10-27T10:55:00Z",
+                        "statusCode": "active",
+                        "refillsRemaining": 2,
+                        "createdAt": "2023-10-27T10:55:00Z",
+                        "updatedAt": "2023-10-27T10:55:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/prescriptions/{prescriptionId}": {
+      "get": {
+        "summary": "Get a prescription by ID",
+        "description": "Retrieves details of a specific prescription by its unique ID. Access is restricted to the patient, prescribing provider, or administrators. All access is logged for HIPAA compliance.",
+        "operationId": "getPrescriptionById",
+        "tags": [
+          "Prescriptions"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "patient:read",
+              "provider:read",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "name": "prescriptionId",
+            "in": "path",
+            "description": "Unique identifier of the prescription.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^pres_[a-zA-Z0-9]{3,}$"
+            },
+            "example": "pres_001"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prescription details retrieved successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrescriptionResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T11:00:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Prescription retrieved successfully.",
+                      "data": {
+                        "prescriptionId": "pres_001",
+                        "patientId": "pat_12345",
+                        "providerId": "prov_A1",
+                        "medicationName": "Amoxicillin",
+                        "dosage": "500mg",
+                        "frequency": "Three times daily",
+                        "prescribedAt": "2023-10-27T10:55:00Z",
+                        "statusCode": "active",
+                        "refillsRemaining": 2,
+                        "createdAt": "2023-10-27T10:55:00Z",
+                        "updatedAt": "2023-10-27T10:55:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/medical-records": {
+      "post": {
+        "summary": "Create a new medical record",
+        "description": "Creates a new medical record entry for a patient. This could be a lab result, progress note, or imaging report. Requires 'provider:write' or 'admin:manage' role. All medical records are sensitive PHI and are logged.",
+        "operationId": "createMedicalRecord",
+        "tags": [
+          "Medical Records"
+        ],
+        "security": [
+          {
+            "OAuth2": [
+              "provider:write",
+              "admin:manage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "requestBody": {
+          "description": "Medical record details to be created.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMedicalRecordRequest"
+              },
+              "examples": {
+                "newMedicalRecord": {
+                  "value": {
+                    "patientId": "pat_12345",
+                    "providerId": "prov_A1",
+                    "recordType": "progress_note",
+                    "content": "Patient reports feeling better after antibiotics. No fever. Advised to complete full course of medication."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Medical record created successfully.",
+            "headers": {
+              "$ref": "#/components/responses/SuccessResponseHeaders"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MedicalRecordResponse"
+                },
+                "examples": {
+                  "successResponse": {
+                    "value": {
+                      "timestamp": "2023-10-27T11:05:00Z",
+                      "statusCode": "SUCCESS",
+                      "message": "Medical record created successfully.",
+                      "data": {
+                        "recordId": "rec_003",
+                        "patientId": "pat_12345",
+                        "providerId": "prov_A1",
+                        "recordType": "progress_note",
+                        "content": "Patient reports feeling better after antibiotics. No fever. Advised to complete full course of medication.",
+                        "createdAt": "2023-10-27T11:05:00Z",
+                        "updatedAt": "2023-10-27T11:05:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "RequestIdHeader": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "description": "Unique identifier for the request, used for tracing and debugging.",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "example": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+      },
+      "IdempotencyKeyHeader": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "description": "A unique key to prevent duplicate requests. If a request with the same key is received within a certain timeframe, the server will return the same response without processing the request again. Recommended for all non-GET operations.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "example": "f1e2d3c4-b5a6-9876-5432-10fedcba9876"
+      }
+    },
+    "headers": {
+      "RateLimitLimit": {
+        "description": "The maximum number of requests that the client can make in the current rate limit window.",
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "RateLimitRemaining": {
+        "description": "The number of requests remaining in the current rate limit window.",
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "RateLimitReset": {
+        "description": "The time at which the current rate limit window resets, specified in UTC epoch seconds.",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "XRequestId": {
+        "description": "A unique identifier for the request, useful for tracing issues in logs.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "schemas": {
+      "StandardResponseEnvelope": {
+        "type": "object",
+        "description": "Standard API response envelope for consistent output.",
+        "required": [
+          "timestamp",
+          "statusCode",
+          "message",
+          "data"
+        ],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The timestamp when the response was generated (ISO 8601 format).",
+            "example": "2023-10-27T10:00:00Z"
+          },
+          "statusCode": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "FAILURE",
+              "PARTIAL"
+            ],
+            "description": "Overall status of the API operation.",
+            "example": "SUCCESS"
+          },
+          "message": {
+            "type": "string",
+            "description": "A human-readable message providing more details about the response.",
+            "example": "Operation completed successfully."
+          },
+          "data": {
+            "type": "object",
+            "description": "The actual response data, which varies based on the endpoint.",
+            "nullable": true
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Standard API error response structure.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "A machine-readable error code.",
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "NOT_FOUND",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN",
+                  "CONFLICT",
+                  "RATE_LIMITED",
+                  "INTERNAL_ERROR",
+                  "SERVICE_UNAVAILABLE"
+                ],
+                "example": "VALIDATION_ERROR"
+              },
+              "message": {
+                "type": "string",
+                "description": "A human-readable message describing the error.",
+                "example": "Invalid input provided for patient creation."
+              },
+              "details": {
+                "type": "array",
+                "description": "Optional array of specific validation errors or additional details.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "description": "The field that caused the error.",
+                      "example": "firstName"
+                    },
+                    "issue": {
+                      "type": "string",
+                      "description": "Description of the issue.",
+                      "example": "First name cannot be empty."
+                    }
+                  }
+                }
+              },
+              "traceId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "A unique identifier for the request, useful for tracing issues in logs.",
+                "example": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+              }
+            }
+          }
+        }
+      },
+      "PaginationMetadata": {
+        "type": "object",
+        "description": "Metadata for paginated list responses.",
+        "required": [
+          "totalCount",
+          "limit",
+          "offset",
+          "hasNextPage",
+          "hasPreviousPage"
+        ],
+        "properties": {
+          "totalCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Total number of items available across all pages.",
+            "example": 100
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The maximum number of items requested per page.",
+            "example": 20
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The number of items skipped from the beginning of the list.",
+            "example": 0
+          },
+          "hasNextPage": {
+            "type": "boolean",
+            "description": "Indicates if there are more pages available.",
+            "example": true
+          },
+          "hasPreviousPage": {
+            "type": "boolean",
+            "description": "Indicates if there is a previous page available.",
+            "example": false
+          }
+        }
+      },
+      "ContactInfo": {
+        "type": "object",
+        "description": "Contact information for a person.",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email address.",
+            "example": "john.doe@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+\\d{1,3}\\d{10}$",
+            "description": "Phone number, including country code (e.g., +15551234567).",
+            "example": "+15551234567"
+          }
+        }
+      },
+      "Address": {
+        "type": "object",
+        "description": "Physical address details.",
+        "properties": {
+          "street": {
+            "type": "string",
+            "description": "Street address.",
+            "example": "123 Main St"
+          },
+          "city": {
+            "type": "string",
+            "description": "City.",
+            "example": "Anytown"
+          },
+          "state": {
+            "type": "string",
+            "description": "State or province.",
+            "example": "CA"
+          },
+          "zipCode": {
+            "type": "string",
+            "pattern": "^\\d{5}(-\\d{4})?$",
+            "description": "Zip or postal code.",
+            "example": "90210"
+          },
+          "country": {
+            "type": "string",
+            "description": "Country.",
+            "default": "USA",
+            "example": "USA"
+          }
+        }
+      },
+      "Patient": {
+        "type": "object",
+        "description": "Represents a patient in the healthcare system. Contains Protected Health Information (PHI).",
+        "required": [
+          "patientId",
+          "firstName",
+          "lastName",
+          "dateOfBirth",
+          "gender",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Unique identifier for the patient.",
+            "pattern": "^pat_[a-zA-Z0-9]{5,}$",
+            "example": "pat_12345"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Patient's first name.",
+            "example": "John"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Patient's last name.",
+            "example": "Doe"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Patient's date of birth (ISO 8601 date format).",
+            "example": "1980-01-15"
+          },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "Male",
+              "Female",
+              "Other",
+              "Unknown"
+            ],
+            "description": "Patient's gender.",
+            "example": "Male"
+          },
+          "contactInfo": {
+            "$ref": "#/components/schemas/ContactInfo",
+            "description": "Patient's contact information."
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address",
+            "description": "Patient's residential address."
+          },
+          "insuranceId": {
+            "type": "string",
+            "description": "Patient's insurance policy identifier.",
+            "nullable": true,
+            "example": "INS-987654"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the patient record was created (ISO 8601 format).",
+            "example": "2023-01-01T10:00:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the patient record was last updated (ISO 8601 format).",
+            "example": "2023-01-01T10:00:00Z"
+          }
+        }
+      },
+      "CreatePatientRequest": {
+        "type": "object",
+        "description": "Request body for creating a new patient.",
+        "required": [
+          "firstName",
+          "lastName",
+          "dateOfBirth",
+          "gender"
+        ],
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "Patient's first name.",
+            "example": "Alice"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Patient's last name.",
+            "example": "Johnson"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Patient's date of birth (ISO 8601 date format).",
+            "example": "1975-11-22"
+          },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "Male",
+              "Female",
+              "Other",
+              "Unknown"
+            ],
+            "description": "Patient's gender.",
+            "example": "Female"
+          },
+          "contactInfo": {
+            "$ref": "#/components/schemas/ContactInfo",
+            "description": "Patient's contact information."
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address",
+            "description": "Patient's residential address."
+          },
+          "insuranceId": {
+            "type": "string",
+            "description": "Patient's insurance policy identifier.",
+            "nullable": true,
+            "example": "INS-333444"
+          }
+        }
+      },
+      "UpdatePatientRequest": {
+        "type": "object",
+        "description": "Request body for updating an existing patient. All fields are optional for partial updates.",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "Patient's first name.",
+            "example": "Jonathan"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Patient's last name.",
+            "example": "Doe-Smith"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Patient's date of birth (ISO 8601 date format).",
+            "example": "1980-01-15"
+          },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "Male",
+              "Female",
+              "Other",
+              "Unknown"
+            ],
+            "description": "Patient's gender.",
+            "example": "Male"
+          },
+          "contactInfo": {
+            "$ref": "#/components/schemas/ContactInfo",
+            "description": "Patient's contact information."
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address",
+            "description": "Patient's residential address."
+          },
+          "insuranceId": {
+            "type": "string",
+            "description": "Patient's insurance policy identifier.",
+            "nullable": true,
+            "example": "INS-987654-V2"
+          }
+        }
+      },
+      "PatientResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandardResponseEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Patient"
+              }
+            }
+          }
+        ]
+      },
+      "PatientListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandardResponseEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "patients",
+                  "totalCount",
+                  "limit",
+                  "offset",
+                  "hasNextPage",
+                  "hasPreviousPage"
+                ],
+                "properties": {
+                  "patients": {
+                    "type": "array",
+                    "description": "List of patient records.",
+                    "items": {
+                      "$ref": "#/components/schemas/Patient"
+                    }
+                  },
+                  "totalCount": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/totalCount"
+                  },
+                  "limit": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/limit"
+                  },
+                  "offset": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/offset"
+                  },
+                  "hasNextPage": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/hasNextPage"
+                  },
+                  "hasPreviousPage": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/hasPreviousPage"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Provider": {
+        "type": "object",
+        "description": "Represents a healthcare provider.",
+        "required": [
+          "providerId",
+          "name",
+          "specialty",
+          "licenseNumber",
+          "facilityId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "description": "Unique identifier for the provider.",
+            "pattern": "^prov_[a-zA-Z0-9]{2,}$",
+            "example": "prov_A1"
+          },
+          "name": {
+            "type": "string",
+            "description": "Provider's full name (e.g., Dr. Emily White).",
+            "example": "Dr. Emily White"
+          },
+          "specialty": {
+            "type": "string",
+            "description": "Medical specialty of the provider.",
+            "example": "General Practice"
+          },
+          "licenseNumber": {
+            "type": "string",
+            "description": "Provider's medical license number.",
+            "example": "LIC-GP-12345"
+          },
+          "facilityId": {
+            "type": "string",
+            "description": "Identifier of the facility where the provider practices.",
+            "pattern": "^fac_[a-zA-Z0-9]{3,}$",
+            "example": "fac_XYZ"
+          },
+          "contactInfo": {
+            "$ref": "#/components/schemas/ContactInfo",
+            "description": "Provider's contact information."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the provider record was created (ISO 8601 format).",
+            "example": "2022-01-01T09:00:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the provider record was last updated (ISO 8601 format).",
+            "example": "2022-01-01T09:00:00Z"
+          }
+        }
+      },
+      "ProviderListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandardResponseEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "providers",
+                  "totalCount",
+                  "limit",
+                  "offset",
+                  "hasNextPage",
+                  "hasPreviousPage"
+                ],
+                "properties": {
+                  "providers": {
+                    "type": "array",
+                    "description": "List of provider records.",
+                    "items": {
+                      "$ref": "#/components/schemas/Provider"
+                    }
+                  },
+                  "totalCount": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/totalCount"
+                  },
+                  "limit": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/limit"
+                  },
+                  "offset": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/offset"
+                  },
+                  "hasNextPage": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/hasNextPage"
+                  },
+                  "hasPreviousPage": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/hasPreviousPage"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Appointment": {
+        "type": "object",
+        "description": "Represents a scheduled appointment between a patient and a provider.",
+        "required": [
+          "appointmentId",
+          "patientId",
+          "providerId",
+          "scheduledAt",
+          "statusCode",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "appointmentId": {
+            "type": "string",
+            "description": "Unique identifier for the appointment.",
+            "pattern": "^app_[a-zA-Z0-9]{3,}$",
+            "example": "app_001"
+          },
+          "patientId": {
+            "type": "string",
+            "description": "Unique identifier of the patient attending the appointment.",
+            "pattern": "^pat_[a-zA-Z0-9]{5,}$",
+            "example": "pat_12345"
+          },
+          "providerId": {
+            "type": "string",
+            "description": "Unique identifier of the provider conducting the appointment.",
+            "pattern": "^prov_[a-zA-Z0-9]{2,}$",
+            "example": "prov_A1"
+          },
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The date and time the appointment is scheduled for (ISO 8601 format).",
+            "example": "2023-11-01T10:00:00Z"
+          },
+          "appointmentType": {
+            "type": "string",
+            "description": "Type of appointment (e.g., Consultation, Follow-up, Check-up).",
+            "nullable": true,
+            "example": "Consultation"
+          },
+          "statusCode": {
+            "type": "string",
+            "enum": [
+              "scheduled",
+              "completed",
+              "cancelled",
+              "pending",
+              "no_show"
+            ],
+            "description": "Current status of the appointment.",
+            "example": "scheduled"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Any additional notes or details about the appointment.",
+            "nullable": true,
+            "example": "First consultation for general check-up."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the appointment record was created (ISO 8601 format).",
+            "example": "2023-10-20T09:00:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the appointment record was last updated (ISO 8601 format).",
+            "example": "2023-10-20T09:00:00Z"
+          }
+        }
+      },
+      "CreateAppointmentRequest": {
+        "type": "object",
+        "description": "Request body for scheduling a new appointment.",
+        "required": [
+          "patientId",
+          "providerId",
+          "scheduledAt"
+        ],
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Unique identifier of the patient for this appointment.",
+            "pattern": "^pat_[a-zA-Z0-9]{5,}$",
+            "example": "pat_12345"
+          },
+          "providerId": {
+            "type": "string",
+            "description": "Unique identifier of the provider for this appointment.",
+            "pattern": "^prov_[a-zA-Z0-9]{2,}$",
+            "example": "prov_A1"
+          },
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The date and time the appointment is scheduled for (ISO 8601 format).",
+            "example": "2023-11-15T11:00:00Z"
+          },
+          "appointmentType": {
+            "type": "string",
+            "description": "Type of appointment (e.g., Consultation, Follow-up, Check-up).",
+            "nullable": true,
+            "example": "Follow-up"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Any additional notes or details about the appointment.",
+            "nullable": true,
+            "example": "Discuss recent lab results."
+          }
+        }
+      },
+      "UpdateAppointmentRequest": {
+        "type": "object",
+        "description": "Request body for partially updating an appointment.",
+        "properties": {
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The new date and time the appointment is scheduled for (ISO 8601 format).",
+            "example": "2023-11-16T10:00:00Z"
+          },
+          "appointmentType": {
+            "type": "string",
+            "description": "New type of appointment.",
+            "example": "Reschedule"
+          },
+          "statusCode": {
+            "type": "string",
+            "enum": [
+              "scheduled",
+              "completed",
+              "cancelled",
+              "pending",
+              "no_show"
+            ],
+            "description": "New status of the appointment.",
+            "example": "cancelled"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Updated notes or details about the appointment.",
+            "example": "Patient requested cancellation due to conflict."
+          }
+        }
+      },
+      "AppointmentResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandardResponseEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Appointment"
+              }
+            }
+          }
+        ]
+      },
+      "AppointmentListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandardResponseEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "appointments",
+                  "totalCount",
+                  "limit",
+                  "offset",
+                  "hasNextPage",
+                  "hasPreviousPage"
+                ],
+                "properties": {
+                  "appointments": {
+                    "type": "array",
+                    "description": "List of appointment records.",
+                    "items": {
+                      "$ref": "#/components/schemas/Appointment"
+                    }
+                  },
+                  "totalCount": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/totalCount"
+                  },
+                  "limit": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/limit"
+                  },
+                  "offset": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/offset"
+                  },
+                  "hasNextPage": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/hasNextPage"
+                  },
+                  "hasPreviousPage": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/hasPreviousPage"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Diagnosis": {
+        "type": "object",
+        "description": "Represents a medical diagnosis for a patient.",
+        "required": [
+          "diagnosisId",
+          "patientId",
+          "providerId",
+          "diagnosisCode",
+          "description",
+          "diagnosedAt",
+          "createdAt"
+        ],
+        "properties": {
+          "diagnosisId": {
+            "type": "string",
+            "description": "Unique identifier for the diagnosis.",
+            "pattern": "^diag_[a-zA-Z0-9]{3,}$",
+            "example": "diag_001"
+          },
+          "patientId": {
+            "type": "string",
+            "description": "Unique identifier of the patient who received the diagnosis.",
+            "pattern": "^pat_[a-zA-Z0-9]{5,}$",
+            "example": "pat_12345"
+          },
+          "providerId": {
+            "type": "string",
+            "description": "Unique identifier of the provider who made the diagnosis.",
+            "pattern": "^prov_[a-zA-Z0-9]{2,}$",
+            "example": "prov_A1"
+          },
+          "diagnosisCode": {
+            "type": "string",
+            "description": "Standard diagnosis code (e.g., ICD-10 code).",
+            "example": "J06.9"
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of the diagnosis.",
+            "example": "Acute upper respiratory infection, unspecified"
+          },
+          "diagnosedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the diagnosis was made (ISO 8601 format).",
+            "example": "2023-09-05T11:30:00Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the diagnosis record was created (ISO 8601 format).",
+            "example": "2023-09-05T11:30:00Z"
+          }
+        }
+      },
+      "Prescription": {
+        "type": "object",
+        "description": "Represents a medical prescription for a patient.",
+        "required": [
+          "prescriptionId",
+          "patientId",
+          "providerId",
+          "medicationName",
+          "dosage",
+          "frequency",
+          "prescribedAt",
+          "statusCode",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "prescriptionId": {
+            "type": "string",
+            "description": "Unique identifier for the prescription.",
+            "pattern": "^pres_[a-zA-Z0-9]{3,}$",
+            "example": "pres_001"
+          },
+          "patientId": {
+            "type": "string",
+            "description": "Unique identifier of the patient for whom the prescription is issued.",
+            "pattern": "^pat_[a-zA-Z0-9]{5,}$",
+            "example": "pat_12345"
+          },
+          "providerId": {
+            "type": "string",
+            "description": "Unique identifier of the provider who issued the prescription.",
+            "pattern": "^prov_[a-zA-Z0-9]{2,}$",
+            "example": "prov_A1"
+          },
+          "medicationName": {
+            "type": "string",
+            "description": "Name of the prescribed medication.",
+            "example": "Amoxicillin"
+          },
+          "dosage": {
+            "type": "string",
+            "description": "Dosage instructions (e.g., '500mg').",
+            "example": "500mg"
+          },
+          "frequency": {
+            "type": "string",
+            "description": "Frequency of medication intake (e.g., 'Three times daily').",
+            "example": "Three times daily"
+          },
+          "prescribedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the prescription was issued (ISO 8601 format).",
+            "example": "2023-10-27T10:55:00Z"
+          },
+          "statusCode": {
+            "type": "string",
+            "enum": [
+              "active",
+              "filled",
+              "expired",
+              "cancelled"
+            ],
+            "description": "Current status of the prescription.",
+            "example": "active"
+          },
+          "refillsRemaining": {
+            "type": "integer",
+            "description": "Number of refills remaining for the prescription.",
+            "minimum": 0,
+            "example": 2
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the prescription record was created (ISO 8601 format).",
+            "example": "2023-10-27T10:55:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the prescription record was last updated (ISO 8601 format).",
+            "example": "2023-10-27T10:55:00Z"
+          }
+        }
+      },
+      "CreatePrescriptionRequest": {
+        "type": "object",
+        "description": "Request body for creating a new prescription.",
+        "required": [
+          "patientId",
+          "providerId",
+          "medicationName",
+          "dosage",
+          "frequency"
+        ],
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Unique identifier of the patient for whom the prescription is issued.",
+            "pattern": "^pat_[a-zA-Z0-9]{5,}$",
+            "example": "pat_12345"
+          },
+          "providerId": {
+            "type": "string",
+            "description": "Unique identifier of the provider who issued the prescription.",
+            "pattern": "^prov_[a-zA-Z0-9]{2,}$",
+            "example": "prov_A1"
+          },
+          "medicationName": {
+            "type": "string",
+            "description": "Name of the prescribed medication.",
+            "example": "Amoxicillin"
+          },
+          "dosage": {
+            "type": "string",
+            "description": "Dosage instructions (e.g., '500mg').",
+            "example": "500mg"
+          },
+          "frequency": {
+            "type": "string",
+            "description": "Frequency of medication intake (e.g., 'Three times daily').",
+            "example": "Three times daily"
+          },
+          "refillsRemaining": {
+            "type": "integer",
+            "description": "Number of refills remaining for the prescription.",
+            "minimum": 0,
+            "default": 0,
+            "example": 2
+          }
+        }
+      },
+      "PrescriptionResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandardResponseEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Prescription"
+              }
+            }
+          }
+        ]
+      },
+      "MedicalRecord": {
+        "type": "object",
+        "description": "Represents a medical record entry for a patient (e.g., lab result, progress note).",
+        "required": [
+          "recordId",
+          "patientId",
+          "providerId",
+          "recordType",
+          "content",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "description": "Unique identifier for the medical record.",
+            "pattern": "^rec_[a-zA-Z0-9]{3,}$",
+            "example": "rec_001"
+          },
+          "patientId": {
+            "type": "string",
+            "description": "Unique identifier of the patient associated with this record.",
+            "pattern": "^pat_[a-zA-Z0-9]{5,}$",
+            "example": "pat_12345"
+          },
+          "providerId": {
+            "type": "string",
+            "description": "Unique identifier of the provider who created or updated this record.",
+            "pattern": "^prov_[a-zA-Z0-9]{2,}$",
+            "example": "prov_A1"
+          },
+          "recordType": {
+            "type": "string",
+            "enum": [
+              "lab_result",
+              "progress_note",
+              "imaging_report",
+              "discharge_summary",
+              "vaccination_record",
+              "consultation_report"
+            ],
+            "description": "Type of medical record.",
+            "example": "lab_result"
+          },
+          "content": {
+            "type": "string",
+            "description": "The actual content of the medical record. This could be plain text, a JSON object, or a URL/reference to a document.",
+            "example": "Blood test results: Hemoglobin 14.5 g/dL, White Blood Cell Count 7.2 K/uL."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the medical record was created (ISO 8601 format).",
+            "example": "2023-09-01T08:30:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the medical record was last updated (ISO 8601 format).",
+            "example": "2023-09-01T08:30:00Z"
+          }
+        }
+      },
+      "CreateMedicalRecordRequest": {
+        "type": "object",
+        "description": "Request body for creating a new medical record.",
+        "required": [
+          "patientId",
+          "providerId",
+          "recordType",
+          "content"
+        ],
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "description": "Unique identifier of the patient associated with this record.",
+            "pattern": "^pat_[a-zA-Z0-9]{5,}$",
+            "example": "pat_12345"
+          },
+          "providerId": {
+            "type": "string",
+            "description": "Unique identifier of the provider creating this record.",
+            "pattern": "^prov_[a-zA-Z0-9]{2,}$",
+            "example": "prov_A1"
+          },
+          "recordType": {
+            "type": "string",
+            "enum": [
+              "lab_result",
+              "progress_note",
+              "imaging_report",
+              "discharge_summary",
+              "vaccination_record",
+              "consultation_report"
+            ],
+            "description": "Type of medical record.",
+            "example": "progress_note"
+          },
+          "content": {
+            "type": "string",
+            "description": "The actual content of the medical record.",
+            "example": "Patient reports feeling better after antibiotics. No fever. Advised to complete full course of medication."
+          }
+        }
+      },
+      "MedicalRecordResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandardResponseEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/MedicalRecord"
+              }
+            }
+          }
+        ]
+      },
+      "MedicalRecordListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandardResponseEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "object",
+                "required": [
+                  "medicalRecords",
+                  "totalCount",
+                  "limit",
+                  "offset",
+                  "hasNextPage",
+                  "hasPreviousPage"
+                ],
+                "properties": {
+                  "medicalRecords": {
+                    "type": "array",
+                    "description": "List of medical records.",
+                    "items": {
+                      "$ref": "#/components/schemas/MedicalRecord"
+                    }
+                  },
+                  "totalCount": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/totalCount"
+                  },
+                  "limit": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/limit"
+                  },
+                  "offset": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/offset"
+                  },
+                  "hasNextPage": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/hasNextPage"
+                  },
+                  "hasPreviousPage": {
+                    "$ref": "#/components/schemas/PaginationMetadata/properties/hasPreviousPage"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Consent": {
+        "type": "object",
+        "description": "Represents a patient's consent for data sharing.",
+        "required": [
+          "consentId",
+          "patientId",
+          "dataSharingPurpose",
+          "grantedAt",
+          "isRevoked",
+          "grantedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "consentId": {
+            "type": "string",
+            "description": "Unique identifier for the consent record.",
+            "pattern": "^con_[a-zA-Z0-9]{3,}$",
+            "example": "con_001"
+          },
+          "patientId": {
+            "type": "string",
+            "description": "Unique identifier of the patient who granted consent.",
+            "pattern": "^pat_[a-zA-Z0-9]{5,}$",
+            "example": "pat_12345"
+          },
+          "dataSharingPurpose": {
+            "type": "string",
+            "description": "Description of the purpose for which data sharing is consented (e.g., 'Research Study X', 'Sharing with primary care physician').",
+            "example": "Research Study X"
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the consent was granted (ISO 8601 format).",
+            "example": "2023-10-27T10:30:00Z"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional timestamp when the consent automatically expires (ISO 8601 format).",
+            "nullable": true,
+            "example": "2024-12-31T23:59:59Z"
+          },
+          "isRevoked": {
+            "type": "boolean",
+            "description": "Indicates if the consent has been revoked.",
+            "example": false
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the consent was revoked, if applicable (ISO 8601 format).",
+            "nullable": true,
+            "example": null
+          },
+          "grantedBy": {
+            "type": "string",
+            "enum": [
+              "patient",
+              "legal_guardian",
+              "proxy"
+            ],
+            "description": "Indicates who granted the consent.",
+            "example": "patient"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the consent record was created (ISO 8601 format).",
+            "example": "2023-10-27T10:30:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the consent record was last updated (ISO 8601 format).",
+            "example": "2023-10-27T10:30:00Z"
+          }
+        }
+      },
+      "CreateConsentRequest": {
+        "type": "object",
+        "description": "Request body for granting a new patient consent.",
+        "required": [
+          "dataSharingPurpose",
+          "grantedBy"
+        ],
+        "properties": {
+          "dataSharingPurpose": {
+            "type": "string",
+            "description": "Description of the purpose for which data sharing is consented.",
+            "example": "Research Study X"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional timestamp when the consent automatically expires (ISO 8601 format).",
+            "nullable": true,
+            "example": "2024-12-31T23:59:59Z"
+          },
+          "grantedBy": {
+            "type": "string",
+            "enum": [
+              "patient",
+              "legal_guardian",
+              "proxy"
+            ],
+            "description": "Indicates who granted the consent.",
+            "example": "patient"
+          }
+        }
+      },
+      "ConsentResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/StandardResponseEnvelope"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Consent"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "responses": {
+      "SuccessResponseHeaders": {
+        "description": "Common headers for successful responses.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestId"
+          },
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/RateLimitLimit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/RateLimitRemaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/RateLimitReset"
+          }
+        }
+      },
+      "ErrorResponseHeaders": {
+        "description": "Common headers for error responses.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestId"
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "Bad Request - The request was malformed or invalid.",
+        "headers": {
+          "$ref": "#/components/responses/ErrorResponseHeaders"
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "validationError": {
+                "value": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid input for patient creation.",
+                    "details": [
+                      {
+                        "field": "firstName",
+                        "issue": "First name is required."
+                      },
+                      {
+                        "field": "dateOfBirth",
+                        "issue": "Date of birth must be in YYYY-MM-DD format."
+                      }
+                    ],
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Unauthorized - Authentication is required or has failed.",
+        "headers": {
+          "$ref": "#/components/responses/ErrorResponseHeaders"
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "unauthorizedError": {
+                "value": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "Authentication token is missing or invalid.",
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Forbidden - The authenticated user does not have the necessary permissions.",
+        "headers": {
+          "$ref": "#/components/responses/ErrorResponseHeaders"
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "forbiddenError": {
+                "value": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "User does not have permission to access this resource.",
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not Found - The requested resource could not be found.",
+        "headers": {
+          "$ref": "#/components/responses/ErrorResponseHeaders"
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "notFoundError": {
+                "value": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Patient with ID 'pat_nonexistent' not found.",
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal Server Error - An unexpected error occurred on the server.",
+        "headers": {
+          "$ref": "#/components/responses/ErrorResponseHeaders"
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "internalError": {
+                "value": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred. Please try again later.",
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "OAuth2": {
+        "type": "oauth2",
+        "description": "OAuth 2.0 authentication with role-based access control. Supports patient, provider, and admin roles.",
+        "flows": {
+          "implicit": {
+            "authorizationUrl": "https://healthcare.example.com/oauth/authorize",
+            "scopes": {
+              "patient:read": "Read patient's own data",
+              "patient:write": "Modify patient's own data (e.g., update contact, manage consent, self-schedule appointments)",
+              "provider:read": "Read patient data as a healthcare provider",
+              "provider:write": "Create/update patient data as a healthcare provider (e.g., diagnoses, prescriptions, medical records)",
+              "admin:manage": "Full administrative access to all resources"
+            }
+          },
+          "authorizationCode": {
+            "authorizationUrl": "https://healthcare.example.com/oauth/authorize",
+            "tokenUrl": "https://healthcare.example.com/oauth/token",
+            "scopes": {
+              "patient:read": "Read patient's own data",
+              "patient:write": "Modify patient's own data (e.g., update contact, manage consent, self-schedule appointments)",
+              "provider:read": "Read patient data as a healthcare provider",
+              "provider:write": "Create/update patient data as a healthcare provider (e.g., diagnoses, prescriptions, medical records)",
+              "admin:manage": "Full administrative access to all resources"
+            }
+          }
+        }
+      }
+    }
+  }
+}
