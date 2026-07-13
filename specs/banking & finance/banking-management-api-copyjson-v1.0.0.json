@@ -1,0 +1,3519 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Banking Management API",
+    "version": "1.0.0",
+    "description": "A comprehensive API for managing banking operations, including accounts, transactions, payments, cards, and customer KYC. Adheres to PCI-DSS, PSD2/Open Banking, and KYC/AML compliance standards. All monetary amounts are represented as decimal numbers with explicit currency codes. All API requests are logged for audit purposes, and responses include a `X-Request-ID` for tracing. Service Level Agreements (SLAs) and timeout configurations are detailed in the accompanying API documentation.",
+    "contact": {
+      "name": "API Support",
+      "url": "https://www.example.com/support",
+      "email": "support@example.com"
+    },
+    "license": {
+      "name": "Apache 2.0",
+      "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.example.com/api/v1",
+      "description": "Production server"
+    },
+    {
+      "url": "https://sandbox.example.com/api/v1",
+      "description": "Sandbox server for testing"
+    }
+  ],
+  "security": [
+    {
+      "OAuth2AuthorizationCode": [
+        "accounts:read",
+        "accounts:write",
+        "transactions:read",
+        "transactions:write",
+        "payments:initiate",
+        "cards:manage",
+        "customers:manage",
+        "consent:manage"
+      ]
+    }
+  ],
+  "tags": [
+    {
+      "name": "Accounts",
+      "description": "Operations related to customer bank accounts."
+    },
+    {
+      "name": "Transactions",
+      "description": "Managing financial transactions and transfers."
+    },
+    {
+      "name": "Payments",
+      "description": "Initiating and managing payments, including Strong Customer Authentication (SCA)."
+    },
+    {
+      "name": "Cards",
+      "description": "Managing customer debit and credit cards."
+    },
+    {
+      "name": "Customers",
+      "description": "Customer management, including KYC/AML processes."
+    },
+    {
+      "name": "Consent",
+      "description": "PSD2/Open Banking consent management."
+    },
+    {
+      "name": "System",
+      "description": "System-level operations, such as health checks."
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health Check",
+        "description": "Checks the health and availability of the API. Returns a simple status to indicate if the service is operational.",
+        "operationId": "getHealthStatus",
+        "responses": {
+          "200": {
+            "description": "API is healthy and operational.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "UP",
+                        "DOWN"
+                      ],
+                      "description": "Overall status of the service."
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "The timestamp when the health check was performed."
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "timestamp"
+                  ]
+                },
+                "examples": {
+                  "healthy": {
+                    "value": {
+                      "status": "UP",
+                      "timestamp": "2023-10-27T12:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable: API is experiencing issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "UP",
+                        "DOWN"
+                      ]
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "timestamp",
+                    "message"
+                  ]
+                },
+                "examples": {
+                  "unhealthy": {
+                    "value": {
+                      "status": "DOWN",
+                      "timestamp": "2023-10-27T12:00:00Z",
+                      "message": "Database connection failed."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts": {
+      "get": {
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "List all customer accounts",
+        "description": "Retrieves a paginated list of all bank accounts associated with the authenticated customer. Includes account details such as balance, type, and status.",
+        "operationId": "listAccounts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "accounts:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of customer accounts.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "accounts": {
+                              "type": "array",
+                              "description": "List of bank accounts.",
+                              "items": {
+                                "$ref": "#/components/schemas/Account"
+                              }
+                            },
+                            "pagination": {
+                              "$ref": "#/components/schemas/PaginationMetadata"
+                            }
+                          },
+                          "required": [
+                            "accounts",
+                            "pagination"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:00:00Z",
+                      "status": "SUCCESS",
+                      "message": "Accounts retrieved successfully.",
+                      "data": {
+                        "accounts": [
+                          {
+                            "accountRef": "acc_12345",
+                            "accountNumber": "1234567890",
+                            "accountType": "SAVINGS",
+                            "balanceAmount": 1500.75,
+                            "currencyCode": "USD",
+                            "statusCode": "ACTIVE",
+                            "accountHolder": "Jane Doe",
+                            "openedDate": "2020-01-15T00:00:00Z"
+                          },
+                          {
+                            "accountRef": "acc_67890",
+                            "accountNumber": "0987654321",
+                            "accountType": "CHECKING",
+                            "balanceAmount": 500.20,
+                            "currencyCode": "USD",
+                            "statusCode": "ACTIVE",
+                            "accountHolder": "Jane Doe",
+                            "openedDate": "2018-05-20T00:00:00Z"
+                          }
+                        ],
+                        "pagination": {
+                          "page": 1,
+                          "pageSize": 10,
+                          "totalCount": 2,
+                          "totalPages": 1,
+                          "hasNextPage": false,
+                          "hasPreviousPage": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/accounts/{accountRef}": {
+      "get": {
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "Get account details by ID",
+        "description": "Retrieves detailed information for a specific bank account identified by its unique `accountRef`.",
+        "operationId": "getAccountDetails",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "accounts:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account details retrieved successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Account"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:05:00Z",
+                      "status": "SUCCESS",
+                      "message": "Account details retrieved.",
+                      "data": {
+                        "accountRef": "acc_12345",
+                        "accountNumber": "1234567890",
+                        "accountType": "SAVINGS",
+                        "balanceAmount": 1500.75,
+                        "currencyCode": "USD",
+                        "statusCode": "ACTIVE",
+                        "accountHolder": "Jane Doe",
+                        "openedDate": "2020-01-15T00:00:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/accounts/{accountRef}/transactions": {
+      "get": {
+        "tags": [
+          "Accounts",
+          "Transactions"
+        ],
+        "summary": "List transactions for a specific account",
+        "description": "Retrieves a paginated list of transactions associated with a given `accountRef`. Supports filtering by transaction type and date range.",
+        "operationId": "listAccountTransactions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          },
+          {
+            "name": "transactionType",
+            "in": "query",
+            "description": "Filter transactions by type (e.g., DEBIT, CREDIT, TRANSFER).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DEBIT",
+                "CREDIT",
+                "TRANSFER",
+                "PAYMENT"
+              ]
+            },
+            "example": "DEBIT"
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "description": "Filter transactions starting from this date (ISO 8601 format).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2023-01-01"
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "description": "Filter transactions up to this date (ISO 8601 format).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2023-12-31"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "transactions:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of transactions for the specified account.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "transactions": {
+                              "type": "array",
+                              "description": "List of transactions.",
+                              "items": {
+                                "$ref": "#/components/schemas/Transaction"
+                              }
+                            },
+                            "pagination": {
+                              "$ref": "#/components/schemas/PaginationMetadata"
+                            }
+                          },
+                          "required": [
+                            "transactions",
+                            "pagination"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:10:00Z",
+                      "status": "SUCCESS",
+                      "message": "Transactions retrieved successfully.",
+                      "data": {
+                        "transactions": [
+                          {
+                            "transactionId": "txn_abc123",
+                            "accountRef": "acc_12345",
+                            "totalAmount": -50.00,
+                            "currencyCode": "USD",
+                            "transactionType": "DEBIT",
+                            "eventTimestamp": "2023-10-26T14:30:00Z",
+                            "description": "Coffee Shop Purchase",
+                            "merchantName": "Starbucks",
+                            "statusCode": "COMPLETED"
+                          },
+                          {
+                            "transactionId": "txn_def456",
+                            "accountRef": "acc_12345",
+                            "totalAmount": 200.00,
+                            "currencyCode": "USD",
+                            "transactionType": "CREDIT",
+                            "eventTimestamp": "2023-10-25T09:00:00Z",
+                            "description": "Salary Deposit",
+                            "merchantName": "Employer Inc.",
+                            "statusCode": "COMPLETED"
+                          }
+                        ],
+                        "pagination": {
+                          "page": 1,
+                          "pageSize": 10,
+                          "totalCount": 2,
+                          "totalPages": 1,
+                          "hasNextPage": false,
+                          "hasPreviousPage": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/accounts/{accountRef}/transfers": {
+      "post": {
+        "tags": [
+          "Accounts",
+          "Transactions"
+        ],
+        "summary": "Initiate an internal fund transfer",
+        "description": "Initiates a transfer of funds between two accounts belonging to the same customer. Requires Strong Customer Authentication (SCA) for high-value transfers.",
+        "operationId": "initiateInternalTransfer",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AccountRefParam"
+          },
+          {
+            "$ref": "#/components/headers/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "requestBody": {
+          "description": "Transfer details, including destination account and amount.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferFundsRequest"
+              },
+              "examples": {
+                "transferRequest": {
+                  "value": {
+                    "destinationAccountRef": "acc_67890",
+                    "totalAmount": 100.00,
+                    "currencyCode": "USD",
+                    "description": "Monthly savings transfer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "transactions:write"
+            ]
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Transfer initiated successfully. Awaiting SCA if required.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "transactionId": {
+                              "type": "string",
+                              "description": "Unique identifier for the initiated transfer transaction."
+                            },
+                            "statusCode": {
+                              "type": "string",
+                              "description": "Current status of the transfer (e.g., PENDING_SCA, IN_PROGRESS, COMPLETED)."
+                            }
+                          },
+                          "required": [
+                            "transactionId",
+                            "statusCode"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:15:00Z",
+                      "status": "SUCCESS",
+                      "message": "Internal transfer initiated.",
+                      "data": {
+                        "transactionId": "txn_ghi789",
+                        "statusCode": "PENDING_SCA"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/transactions": {
+      "post": {
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Initiate a new transaction (e.g., external payment, bill pay)",
+        "description": "Initiates a new financial transaction from a customer's account to an external recipient or for bill payment. Requires Strong Customer Authentication (SCA).",
+        "operationId": "initiateTransaction",
+        "parameters": [
+          {
+            "$ref": "#/components/headers/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "requestBody": {
+          "description": "Details for the transaction to be initiated.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionInitiationRequest"
+              },
+              "examples": {
+                "externalPayment": {
+                  "value": {
+                    "sourceAccountRef": "acc_12345",
+                    "totalAmount": 75.50,
+                    "currencyCode": "USD",
+                    "transactionType": "PAYMENT",
+                    "description": "Utility Bill Payment",
+                    "recipientName": "Utility Company",
+                    "recipientAccountNumber": "9876543210",
+                    "recipientBankCode": "BANKUS33"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "transactions:write"
+            ]
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Transaction initiated successfully. Awaiting SCA if required.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "transactionId": {
+                              "type": "string",
+                              "description": "Unique identifier for the initiated transaction."
+                            },
+                            "statusCode": {
+                              "type": "string",
+                              "description": "Current status of the transaction (e.g., PENDING_SCA, PENDING, COMPLETED, FAILED)."
+                            }
+                          },
+                          "required": [
+                            "transactionId",
+                            "statusCode"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:20:00Z",
+                      "status": "SUCCESS",
+                      "message": "Transaction initiated successfully.",
+                      "data": {
+                        "transactionId": "txn_jkl012",
+                        "statusCode": "PENDING_SCA"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/transactions/{transactionId}": {
+      "get": {
+        "tags": [
+          "Transactions"
+        ],
+        "summary": "Get transaction status and details",
+        "description": "Retrieves the current status and full details of a specific transaction using its unique `transactionId`.",
+        "operationId": "getTransactionDetails",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TransactionIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "transactions:read"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction details retrieved successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Transaction"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:25:00Z",
+                      "status": "SUCCESS",
+                      "message": "Transaction details retrieved.",
+                      "data": {
+                        "transactionId": "txn_jkl012",
+                        "accountRef": "acc_12345",
+                        "totalAmount": 75.50,
+                        "currencyCode": "USD",
+                        "transactionType": "PAYMENT",
+                        "eventTimestamp": "2023-10-27T10:20:00Z",
+                        "description": "Utility Bill Payment",
+                        "merchantName": "Utility Company",
+                        "statusCode": "PENDING_SCA"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/payments": {
+      "post": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Initiate a new payment",
+        "description": "Initiates a new payment from a customer's account. This endpoint is designed for general payments and will typically require Strong Customer Authentication (SCA) based on risk assessment and regulatory requirements.",
+        "operationId": "initiatePayment",
+        "parameters": [
+          {
+            "$ref": "#/components/headers/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "requestBody": {
+          "description": "Payment details, including source, destination, and amount.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentInitiationRequest"
+              },
+              "examples": {
+                "paymentRequest": {
+                  "value": {
+                    "sourceAccountRef": "acc_12345",
+                    "totalAmount": 120.00,
+                    "currencyCode": "USD",
+                    "recipientName": "Online Store",
+                    "recipientIdentifier": "store@example.com",
+                    "paymentMethod": "EMAIL",
+                    "description": "Online purchase"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "payments:initiate"
+            ]
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Payment initiated successfully. May require SCA.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "paymentId": {
+                              "type": "string",
+                              "description": "Unique identifier for the initiated payment."
+                            },
+                            "statusCode": {
+                              "type": "string",
+                              "description": "Current status of the payment (e.g., PENDING_SCA, PENDING, COMPLETED, FAILED)."
+                            }
+                          },
+                          "required": [
+                            "paymentId",
+                            "statusCode"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:30:00Z",
+                      "status": "SUCCESS",
+                      "message": "Payment initiated successfully.",
+                      "data": {
+                        "paymentId": "pay_mno345",
+                        "statusCode": "PENDING_SCA"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/cards": {
+      "get": {
+        "tags": [
+          "Cards"
+        ],
+        "summary": "List all customer cards",
+        "description": "Retrieves a paginated list of all debit and credit cards associated with the authenticated customer. Card numbers are masked for PCI-DSS compliance.",
+        "operationId": "listCards",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/OffsetParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "cards:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of customer cards.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "cards": {
+                              "type": "array",
+                              "description": "List of cards.",
+                              "items": {
+                                "$ref": "#/components/schemas/Card"
+                              }
+                            },
+                            "pagination": {
+                              "$ref": "#/components/schemas/PaginationMetadata"
+                            }
+                          },
+                          "required": [
+                            "cards",
+                            "pagination"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:35:00Z",
+                      "status": "SUCCESS",
+                      "message": "Cards retrieved successfully.",
+                      "data": {
+                        "cards": [
+                          {
+                            "cardId": "card_pqr678",
+                            "accountRef": "acc_12345",
+                            "maskedCardNumber": "************1234",
+                            "cardType": "DEBIT",
+                            "expiryDate": "12/25",
+                            "statusCode": "ACTIVE",
+                            "cardholderName": "Jane Doe",
+                            "isBlocked": false
+                          },
+                          {
+                            "cardId": "card_stu901",
+                            "accountRef": "acc_12345",
+                            "maskedCardNumber": "************5678",
+                            "cardType": "CREDIT",
+                            "expiryDate": "06/27",
+                            "statusCode": "ACTIVE",
+                            "cardholderName": "Jane Doe",
+                            "isBlocked": false
+                          }
+                        ],
+                        "pagination": {
+                          "page": 1,
+                          "pageSize": 10,
+                          "totalCount": 2,
+                          "totalPages": 1,
+                          "hasNextPage": false,
+                          "hasPreviousPage": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/cards/{cardId}": {
+      "get": {
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Get card details by ID",
+        "description": "Retrieves detailed information for a specific card identified by its unique `cardId`. Card numbers are masked.",
+        "operationId": "getCardDetails",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CardIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "cards:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Card details retrieved successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Card"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:40:00Z",
+                      "status": "SUCCESS",
+                      "message": "Card details retrieved.",
+                      "data": {
+                        "cardId": "card_pqr678",
+                        "accountRef": "acc_12345",
+                        "maskedCardNumber": "************1234",
+                        "cardType": "DEBIT",
+                        "expiryDate": "12/25",
+                        "statusCode": "ACTIVE",
+                        "cardholderName": "Jane Doe",
+                        "isBlocked": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/cards/{cardId}/block": {
+      "post": {
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Block a specific card",
+        "description": "Blocks a customer's card identified by `cardId`. This action is typically irreversible or requires manual intervention to unblock.",
+        "operationId": "blockCard",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CardIdParam"
+          },
+          {
+            "$ref": "#/components/headers/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "requestBody": {
+          "description": "Reason for blocking the card.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockCardRequest"
+              },
+              "examples": {
+                "blockReason": {
+                  "value": {
+                    "reason": "LOST_OR_STOLEN"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "cards:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Card blocked successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "cardId": {
+                              "type": "string",
+                              "description": "Identifier of the blocked card."
+                            },
+                            "statusCode": {
+                              "type": "string",
+                              "description": "New status of the card (e.g., BLOCKED)."
+                            }
+                          },
+                          "required": [
+                            "cardId",
+                            "statusCode"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:45:00Z",
+                      "status": "SUCCESS",
+                      "message": "Card blocked successfully.",
+                      "data": {
+                        "cardId": "card_pqr678",
+                        "statusCode": "BLOCKED"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/cards/{cardId}/unblock": {
+      "post": {
+        "tags": [
+          "Cards"
+        ],
+        "summary": "Unblock a specific card",
+        "description": "Unblocks a customer's card identified by `cardId`. This action may require additional verification steps.",
+        "operationId": "unblockCard",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CardIdParam"
+          },
+          {
+            "$ref": "#/components/headers/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "requestBody": {
+          "description": "Optional reason for unblocking the card.",
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "Optional reason for unblocking the card.",
+                    "example": "FOUND_CARD"
+                  }
+                }
+              },
+              "examples": {
+                "unblockReason": {
+                  "value": {
+                    "reason": "FOUND_CARD"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "cards:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Card unblocked successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "cardId": {
+                              "type": "string",
+                              "description": "Identifier of the unblocked card."
+                            },
+                            "statusCode": {
+                              "type": "string",
+                              "description": "New status of the card (e.g., ACTIVE)."
+                            }
+                          },
+                          "required": [
+                            "cardId",
+                            "statusCode"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:50:00Z",
+                      "status": "SUCCESS",
+                      "message": "Card unblocked successfully.",
+                      "data": {
+                        "cardId": "card_pqr678",
+                        "statusCode": "ACTIVE"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/customers": {
+      "post": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Create a new customer (onboarding)",
+        "description": "Registers a new customer in the banking system. This initiates the KYC/AML process, requiring personal details and potentially identity verification documents.",
+        "operationId": "createCustomer",
+        "parameters": [
+          {
+            "$ref": "#/components/headers/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "requestBody": {
+          "description": "Customer details for onboarding.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerCreationRequest"
+              },
+              "examples": {
+                "newCustomer": {
+                  "value": {
+                    "firstName": "John",
+                    "lastName": "Doe",
+                    "email": "john.doe@example.com",
+                    "phoneNumber": "+15551234567",
+                    "dateOfBirth": "1990-01-01",
+                    "address": {
+                      "streetAddress": "123 Main St",
+                      "city": "Anytown",
+                      "state": "CA",
+                      "postalCode": "90210",
+                      "country": "USA"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "customers:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Customer created successfully, KYC process initiated.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "customerRef": {
+                              "type": "string",
+                              "description": "Unique identifier for the newly created customer."
+                            },
+                            "kycStatusCode": {
+                              "type": "string",
+                              "description": "Current KYC status (e.g., PENDING_VERIFICATION, VERIFIED)."
+                            }
+                          },
+                          "required": [
+                            "customerRef",
+                            "kycStatusCode"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T10:55:00Z",
+                      "status": "SUCCESS",
+                      "message": "Customer created, KYC pending verification.",
+                      "data": {
+                        "customerRef": "cust_vwx234",
+                        "kycStatusCode": "PENDING_VERIFICATION"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/customers/{customerRef}": {
+      "get": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Get customer details by ID",
+        "description": "Retrieves detailed information for a specific customer identified by their unique `customerRef`.",
+        "operationId": "getCustomerDetails",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CustomerRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "customers:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Customer details retrieved successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Customer"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T11:00:00Z",
+                      "status": "SUCCESS",
+                      "message": "Customer details retrieved.",
+                      "data": {
+                        "customerRef": "cust_vwx234",
+                        "firstName": "John",
+                        "lastName": "Doe",
+                        "email": "john.doe@example.com",
+                        "phoneNumber": "+15551234567",
+                        "dateOfBirth": "1990-01-01",
+                        "kycStatusCode": "PENDING_VERIFICATION",
+                        "address": {
+                          "streetAddress": "123 Main St",
+                          "city": "Anytown",
+                          "state": "CA",
+                          "postalCode": "90210",
+                          "country": "USA"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/customers/{customerRef}/kyc": {
+      "patch": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Update customer KYC status",
+        "description": "Updates the Know Your Customer (KYC) status for a specific customer. This endpoint is typically used by internal systems or authorized partners after identity verification.",
+        "operationId": "updateCustomerKycStatus",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CustomerRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "requestBody": {
+          "description": "New KYC status and optional verification details.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KycVerificationRequest"
+              },
+              "examples": {
+                "verifyKyc": {
+                  "value": {
+                    "kycStatusCode": "VERIFIED",
+                    "verificationDate": "2023-10-27T11:05:00Z",
+                    "verifiedBy": "AdminUser"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "customers:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "KYC status updated successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "customerRef": {
+                              "type": "string",
+                              "description": "Identifier of the customer."
+                            },
+                            "kycStatusCode": {
+                              "type": "string",
+                              "description": "Updated KYC status."
+                            }
+                          },
+                          "required": [
+                            "customerRef",
+                            "kycStatusCode"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T11:05:00Z",
+                      "status": "SUCCESS",
+                      "message": "KYC status updated to VERIFIED.",
+                      "data": {
+                        "customerRef": "cust_vwx234",
+                        "kycStatusCode": "VERIFIED"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/consent": {
+      "post": {
+        "tags": [
+          "Consent"
+        ],
+        "summary": "Create a new consent for Open Banking",
+        "description": "Establishes a new consent agreement for third-party access to customer account information or payment initiation, as per PSD2/Open Banking regulations. This typically involves customer redirection for authorization.",
+        "operationId": "createConsent",
+        "parameters": [
+          {
+            "$ref": "#/components/headers/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "requestBody": {
+          "description": "Details of the consent request, including requested permissions and expiry.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentCreationRequest"
+              },
+              "examples": {
+                "accountAccessConsent": {
+                  "value": {
+                    "customerRef": "cust_vwx234",
+                    "thirdPartyId": "tpp_xyz789",
+                    "permissions": [
+                      "accounts:read",
+                      "transactions:read"
+                    ],
+                    "expiryDate": "2024-01-01T00:00:00Z",
+                    "redirectUri": "https://tpp.example.com/callback"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "consent:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Consent request created. Redirect URL provided for customer authorization.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "consentId": {
+                              "type": "string",
+                              "description": "Unique identifier for the created consent."
+                            },
+                            "authorizationUrl": {
+                              "type": "string",
+                              "format": "uri",
+                              "description": "URL to redirect the customer for authorization of the consent."
+                            },
+                            "statusCode": {
+                              "type": "string",
+                              "description": "Current status of the consent (e.g., PENDING_AUTHORIZATION)."
+                            }
+                          },
+                          "required": [
+                            "consentId",
+                            "authorizationUrl",
+                            "statusCode"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T11:10:00Z",
+                      "status": "SUCCESS",
+                      "message": "Consent request created. Awaiting customer authorization.",
+                      "data": {
+                        "consentId": "con_1a2b3c",
+                        "authorizationUrl": "https://auth.example.com/authorize?consent_id=con_1a2b3c&redirect_uri=https://tpp.example.com/callback",
+                        "statusCode": "PENDING_AUTHORIZATION"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/consent/{consentId}": {
+      "get": {
+        "tags": [
+          "Consent"
+        ],
+        "summary": "Get consent details by ID",
+        "description": "Retrieves the details and current status of a specific consent agreement.",
+        "operationId": "getConsentDetails",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsentIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "consent:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consent details retrieved successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Consent"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T11:15:00Z",
+                      "status": "SUCCESS",
+                      "message": "Consent details retrieved.",
+                      "data": {
+                        "consentId": "con_1a2b3c",
+                        "customerRef": "cust_vwx234",
+                        "thirdPartyId": "tpp_xyz789",
+                        "permissions": [
+                          "accounts:read",
+                          "transactions:read"
+                        ],
+                        "statusCode": "AUTHORIZED",
+                        "createdAt": "2023-10-27T11:10:00Z",
+                        "authorizedAt": "2023-10-27T11:12:00Z",
+                        "expiryDate": "2024-01-01T00:00:00Z"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Consent"
+        ],
+        "summary": "Update or revoke an existing consent",
+        "description": "Modifies the status or permissions of an existing consent agreement. This can be used to revoke consent or extend its validity.",
+        "operationId": "updateConsent",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConsentIdParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestID"
+          }
+        ],
+        "requestBody": {
+          "description": "Updates to the consent, such as changing its status to 'REVOKED'.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentUpdateRequest"
+              },
+              "examples": {
+                "revokeConsent": {
+                  "value": {
+                    "statusCode": "REVOKED",
+                    "revocationReason": "Customer request"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCode": [
+              "consent:manage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consent updated successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              },
+              "X-Request-ID": {
+                "$ref": "#/components/headers/XRequestIDResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/StandardResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "consentId": {
+                              "type": "string",
+                              "description": "Identifier of the updated consent."
+                            },
+                            "statusCode": {
+                              "type": "string",
+                              "description": "New status of the consent."
+                            }
+                          },
+                          "required": [
+                            "consentId",
+                            "statusCode"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "timestamp": "2023-10-27T11:20:00Z",
+                      "status": "SUCCESS",
+                      "message": "Consent revoked successfully.",
+                      "data": {
+                        "consentId": "con_1a2b3c",
+                        "statusCode": "REVOKED"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "StandardResponse": {
+        "type": "object",
+        "description": "Standard API response envelope for successful operations.",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The timestamp when the response was generated (ISO 8601)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "FAILURE",
+              "PARTIAL"
+            ],
+            "description": "Overall status of the API operation."
+          },
+          "message": {
+            "type": "string",
+            "description": "A human-readable message providing context for the response."
+          },
+          "data": {
+            "type": "object",
+            "description": "The actual response payload, varies by endpoint."
+          }
+        },
+        "required": [
+          "timestamp",
+          "status",
+          "message",
+          "data"
+        ],
+        "example": {
+          "timestamp": "2023-10-27T10:00:00Z",
+          "status": "SUCCESS",
+          "message": "Operation completed successfully.",
+          "data": {}
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Standard API error response structure.",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "A machine-readable error code.",
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "NOT_FOUND",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN",
+                  "CONFLICT",
+                  "RATE_LIMITED",
+                  "INTERNAL_ERROR",
+                  "SERVICE_UNAVAILABLE"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "description": "A human-readable message describing the error."
+              },
+              "details": {
+                "type": "array",
+                "description": "Optional array of specific error details, e.g., validation errors.",
+                "items": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                }
+              },
+              "traceId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "A unique identifier for the request, useful for tracing issues."
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "traceId"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "example": {
+          "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "Invalid input provided.",
+            "details": [
+              {
+                "field": "totalAmount",
+                "message": "Amount must be positive."
+              }
+            ],
+            "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+          }
+        }
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "description": "Detailed information about a specific error, typically for validation issues.",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "The field that caused the error."
+          },
+          "message": {
+            "type": "string",
+            "description": "A specific message for the field error."
+          }
+        },
+        "required": [
+          "field",
+          "message"
+        ]
+      },
+      "PaginationMetadata": {
+        "type": "object",
+        "description": "Metadata for paginated responses.",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "description": "The current page number (1-indexed)."
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "description": "The number of items per page."
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "The total number of items available across all pages."
+          },
+          "totalPages": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "The total number of pages available."
+          },
+          "hasNextPage": {
+            "type": "boolean",
+            "description": "Indicates if there is a next page of results."
+          },
+          "hasPreviousPage": {
+            "type": "boolean",
+            "description": "Indicates if there is a previous page of results."
+          }
+        },
+        "required": [
+          "page",
+          "pageSize",
+          "totalCount",
+          "totalPages",
+          "hasNextPage",
+          "hasPreviousPage"
+        ],
+        "example": {
+          "page": 1,
+          "pageSize": 10,
+          "totalCount": 25,
+          "totalPages": 3,
+          "hasNextPage": true,
+          "hasPreviousPage": false
+        }
+      },
+      "Account": {
+        "type": "object",
+        "description": "Represents a customer's bank account.",
+        "properties": {
+          "accountRef": {
+            "type": "string",
+            "description": "Unique identifier for the account.",
+            "example": "acc_12345"
+          },
+          "accountNumber": {
+            "type": "string",
+            "description": "The primary account number (masked or full depending on context/permissions).",
+            "pattern": "^[0-9]{10,17}$",
+            "example": "1234567890"
+          },
+          "accountType": {
+            "type": "string",
+            "description": "Type of bank account (e.g., SAVINGS, CHECKING, CREDIT_CARD).",
+            "enum": [
+              "SAVINGS",
+              "CHECKING",
+              "CREDIT_CARD",
+              "LOAN"
+            ],
+            "example": "SAVINGS"
+          },
+          "balanceAmount": {
+            "type": "number",
+            "format": "float",
+            "description": "Current available balance of the account. Represented as a decimal number.",
+            "example": 1500.75
+          },
+          "currencyCode": {
+            "type": "string",
+            "description": "ISO 4217 currency code for the account balance.",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "Current status of the account (e.g., ACTIVE, CLOSED, FROZEN).",
+            "enum": [
+              "ACTIVE",
+              "CLOSED",
+              "FROZEN",
+              "PENDING"
+            ],
+            "example": "ACTIVE"
+          },
+          "accountHolder": {
+            "type": "string",
+            "description": "Name of the primary account holder.",
+            "example": "Jane Doe"
+          },
+          "openedDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date and time when the account was opened (ISO 8601)."
+          }
+        },
+        "required": [
+          "accountRef",
+          "accountNumber",
+          "accountType",
+          "balanceAmount",
+          "currencyCode",
+          "statusCode"
+        ]
+      },
+      "Transaction": {
+        "type": "object",
+        "description": "Represents a financial transaction.",
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "description": "Unique identifier for the transaction.",
+            "example": "txn_abc123"
+          },
+          "accountRef": {
+            "type": "string",
+            "description": "The account from which the transaction originated or was posted to.",
+            "example": "acc_12345"
+          },
+          "totalAmount": {
+            "type": "number",
+            "format": "float",
+            "description": "The amount of the transaction. Positive for credits, negative for debits.",
+            "example": -50.00
+          },
+          "currencyCode": {
+            "type": "string",
+            "description": "ISO 4217 currency code for the transaction amount.",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "transactionType": {
+            "type": "string",
+            "description": "Type of transaction (e.g., DEBIT, CREDIT, TRANSFER, PAYMENT).",
+            "enum": [
+              "DEBIT",
+              "CREDIT",
+              "TRANSFER",
+              "PAYMENT",
+              "FEE"
+            ],
+            "example": "DEBIT"
+          },
+          "eventTimestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date and time when the transaction occurred or was posted (ISO 8601)."
+          },
+          "description": {
+            "type": "string",
+            "description": "A brief description of the transaction.",
+            "example": "Coffee Shop Purchase"
+          },
+          "merchantName": {
+            "type": "string",
+            "description": "Name of the merchant or recipient for the transaction.",
+            "example": "Starbucks"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "Current status of the transaction (e.g., COMPLETED, PENDING, FAILED, CANCELLED).",
+            "enum": [
+              "COMPLETED",
+              "PENDING",
+              "FAILED",
+              "CANCELLED",
+              "REFUNDED",
+              "PENDING_SCA"
+            ],
+            "example": "COMPLETED"
+          }
+        },
+        "required": [
+          "transactionId",
+          "accountRef",
+          "totalAmount",
+          "currencyCode",
+          "transactionType",
+          "eventTimestamp",
+          "statusCode"
+        ]
+      },
+      "Customer": {
+        "type": "object",
+        "description": "Represents a banking customer.",
+        "properties": {
+          "customerRef": {
+            "type": "string",
+            "description": "Unique identifier for the customer.",
+            "example": "cust_vwx234"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Customer's first name.",
+            "example": "John"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Customer's last name.",
+            "example": "Doe"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Customer's email address.",
+            "example": "john.doe@example.com"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "Customer's primary phone number (E.164 format).",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "example": "+15551234567"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Customer's date of birth (ISO 8601 date format).",
+            "example": "1990-01-01"
+          },
+          "kycStatusCode": {
+            "type": "string",
+            "description": "Current Know Your Customer (KYC) status.",
+            "enum": [
+              "PENDING_VERIFICATION",
+              "VERIFIED",
+              "REJECTED",
+              "EXPIRED"
+            ],
+            "example": "PENDING_VERIFICATION"
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          }
+        },
+        "required": [
+          "customerRef",
+          "firstName",
+          "lastName",
+          "email",
+          "phoneNumber",
+          "dateOfBirth",
+          "kycStatusCode"
+        ]
+      },
+      "Address": {
+        "type": "object",
+        "description": "Represents a physical address.",
+        "properties": {
+          "streetAddress": {
+            "type": "string",
+            "description": "Street name and house number.",
+            "example": "123 Main St"
+          },
+          "city": {
+            "type": "string",
+            "description": "City.",
+            "example": "Anytown"
+          },
+          "state": {
+            "type": "string",
+            "description": "State, province, or region.",
+            "example": "CA"
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "Postal or ZIP code.",
+            "example": "90210"
+          },
+          "country": {
+            "type": "string",
+            "description": "Country (ISO 3166-1 alpha-3 code).",
+            "example": "USA"
+          }
+        },
+        "required": [
+          "streetAddress",
+          "city",
+          "state",
+          "postalCode",
+          "country"
+        ]
+      },
+      "Card": {
+        "type": "object",
+        "description": "Represents a customer's debit or credit card.",
+        "properties": {
+          "cardId": {
+            "type": "string",
+            "description": "Unique identifier for the card.",
+            "example": "card_pqr678"
+          },
+          "accountRef": {
+            "type": "string",
+            "description": "The account this card is linked to.",
+            "example": "acc_12345"
+          },
+          "maskedCardNumber": {
+            "type": "string",
+            "description": "Masked primary account number (PAN) for PCI-DSS compliance (e.g., ************1234).",
+            "pattern": "^\\*+\\d{4}$",
+            "example": "************1234"
+          },
+          "cardType": {
+            "type": "string",
+            "description": "Type of card (e.g., DEBIT, CREDIT).",
+            "enum": [
+              "DEBIT",
+              "CREDIT"
+            ],
+            "example": "DEBIT"
+          },
+          "expiryDate": {
+            "type": "string",
+            "description": "Card expiry date (MM/YY format).",
+            "pattern": "^(0[1-9]|1[0-2])\\/([0-9]{2})$",
+            "example": "12/25"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "Current status of the card (e.g., ACTIVE, BLOCKED, EXPIRED, STOLEN).",
+            "enum": [
+              "ACTIVE",
+              "BLOCKED",
+              "EXPIRED",
+              "STOLEN",
+              "LOST"
+            ],
+            "example": "ACTIVE"
+          },
+          "cardholderName": {
+            "type": "string",
+            "description": "Name of the cardholder as it appears on the card.",
+            "example": "Jane Doe"
+          },
+          "isBlocked": {
+            "type": "boolean",
+            "description": "Indicates if the card is currently blocked.",
+            "example": false
+          }
+        },
+        "required": [
+          "cardId",
+          "accountRef",
+          "maskedCardNumber",
+          "cardType",
+          "expiryDate",
+          "statusCode",
+          "cardholderName",
+          "isBlocked"
+        ]
+      },
+      "TransferFundsRequest": {
+        "type": "object",
+        "description": "Request body for initiating an internal fund transfer.",
+        "properties": {
+          "destinationAccountRef": {
+            "type": "string",
+            "description": "The unique identifier of the destination account for the transfer.",
+            "example": "acc_67890"
+          },
+          "totalAmount": {
+            "type": "number",
+            "format": "float",
+            "minimum": 0.01,
+            "description": "The amount to transfer.",
+            "example": 100.00
+          },
+          "currencyCode": {
+            "type": "string",
+            "description": "ISO 4217 currency code for the transfer amount.",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "description": {
+            "type": "string",
+            "description": "A brief description or memo for the transfer.",
+            "maxLength": 255,
+            "example": "Monthly savings transfer"
+          }
+        },
+        "required": [
+          "destinationAccountRef",
+          "totalAmount",
+          "currencyCode"
+        ]
+      },
+      "TransactionInitiationRequest": {
+        "type": "object",
+        "description": "Request body for initiating a new transaction (e.g., external payment).",
+        "properties": {
+          "sourceAccountRef": {
+            "type": "string",
+            "description": "The unique identifier of the source account for the transaction.",
+            "example": "acc_12345"
+          },
+          "totalAmount": {
+            "type": "number",
+            "format": "float",
+            "minimum": 0.01,
+            "description": "The amount of the transaction.",
+            "example": 75.50
+          },
+          "currencyCode": {
+            "type": "string",
+            "description": "ISO 4217 currency code for the transaction amount.",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "transactionType": {
+            "type": "string",
+            "description": "The type of transaction to initiate (e.g., PAYMENT, BILL_PAY).",
+            "enum": [
+              "PAYMENT",
+              "BILL_PAY",
+              "EXTERNAL_TRANSFER"
+            ],
+            "example": "PAYMENT"
+          },
+          "description": {
+            "type": "string",
+            "description": "A brief description or memo for the transaction.",
+            "maxLength": 255,
+            "example": "Utility Bill Payment"
+          },
+          "recipientName": {
+            "type": "string",
+            "description": "Name of the transaction recipient.",
+            "example": "Utility Company"
+          },
+          "recipientAccountNumber": {
+            "type": "string",
+            "description": "Recipient's bank account number.",
+            "pattern": "^[0-9]{5,17}$",
+            "example": "9876543210"
+          },
+          "recipientBankCode": {
+            "type": "string",
+            "description": "Recipient's bank identifier (e.g., SWIFT/BIC, ABA routing number).",
+            "example": "BANKUS33"
+          }
+        },
+        "required": [
+          "sourceAccountRef",
+          "totalAmount",
+          "currencyCode",
+          "transactionType",
+          "recipientName",
+          "recipientAccountNumber",
+          "recipientBankCode"
+        ]
+      },
+      "PaymentInitiationRequest": {
+        "type": "object",
+        "description": "Request body for initiating a new payment.",
+        "properties": {
+          "sourceAccountRef": {
+            "type": "string",
+            "description": "The unique identifier of the source account for the payment.",
+            "example": "acc_12345"
+          },
+          "totalAmount": {
+            "type": "number",
+            "format": "float",
+            "minimum": 0.01,
+            "description": "The amount of the payment.",
+            "example": 120.00
+          },
+          "currencyCode": {
+            "type": "string",
+            "description": "ISO 4217 currency code for the payment amount.",
+            "pattern": "^[A-Z]{3}$",
+            "example": "USD"
+          },
+          "recipientName": {
+            "type": "string",
+            "description": "Name of the payment recipient.",
+            "example": "Online Store"
+          },
+          "recipientIdentifier": {
+            "type": "string",
+            "description": "Identifier for the recipient (e.g., email, phone number, payment handle).",
+            "example": "store@example.com"
+          },
+          "paymentMethod": {
+            "type": "string",
+            "description": "The method used to identify the recipient for payment.",
+            "enum": [
+              "EMAIL",
+              "PHONE",
+              "ACCOUNT_NUMBER",
+              "PAYMENT_HANDLE"
+            ],
+            "example": "EMAIL"
+          },
+          "description": {
+            "type": "string",
+            "description": "A brief description or reference for the payment.",
+            "maxLength": 255,
+            "example": "Online purchase"
+          }
+        },
+        "required": [
+          "sourceAccountRef",
+          "totalAmount",
+          "currencyCode",
+          "recipientName",
+          "recipientIdentifier",
+          "paymentMethod"
+        ]
+      },
+      "BlockCardRequest": {
+        "type": "object",
+        "description": "Request body for blocking a card.",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "The reason for blocking the card.",
+            "enum": [
+              "LOST_OR_STOLEN",
+              "FRAUD_SUSPECTED",
+              "DAMAGED",
+              "OTHER"
+            ],
+            "example": "LOST_OR_STOLEN"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Additional notes regarding the card block.",
+            "maxLength": 500,
+            "example": "Customer reported card missing after travel."
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "CustomerCreationRequest": {
+        "type": "object",
+        "description": "Request body for creating a new customer.",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "Customer's first name.",
+            "example": "John"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Customer's last name.",
+            "example": "Doe"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Customer's email address.",
+            "example": "john.doe@example.com"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "description": "Customer's primary phone number (E.164 format).",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "example": "+15551234567"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Customer's date of birth (ISO 8601 date format).",
+            "example": "1990-01-01"
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "email",
+          "phoneNumber",
+          "dateOfBirth",
+          "address"
+        ]
+      },
+      "KycVerificationRequest": {
+        "type": "object",
+        "description": "Request body for updating customer KYC status.",
+        "properties": {
+          "kycStatusCode": {
+            "type": "string",
+            "description": "The new KYC status for the customer.",
+            "enum": [
+              "VERIFIED",
+              "REJECTED",
+              "PENDING_REVIEW"
+            ],
+            "example": "VERIFIED"
+          },
+          "verificationDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date and time of KYC verification (ISO 8601).",
+            "example": "2023-10-27T11:05:00Z"
+          },
+          "verifiedBy": {
+            "type": "string",
+            "description": "Identifier of the agent or system that performed the verification.",
+            "example": "AdminUser"
+          },
+          "rejectionReason": {
+            "type": "string",
+            "description": "Reason for KYC rejection, if applicable.",
+            "maxLength": 500,
+            "example": "Documents expired"
+          }
+        },
+        "required": [
+          "kycStatusCode"
+        ]
+      },
+      "Consent": {
+        "type": "object",
+        "description": "Represents a customer's consent for Open Banking access.",
+        "properties": {
+          "consentId": {
+            "type": "string",
+            "description": "Unique identifier for the consent agreement.",
+            "example": "con_1a2b3c"
+          },
+          "customerRef": {
+            "type": "string",
+            "description": "The customer who granted the consent.",
+            "example": "cust_vwx234"
+          },
+          "thirdPartyId": {
+            "type": "string",
+            "description": "Identifier of the Third-Party Provider (TPP) to whom consent is granted.",
+            "example": "tpp_xyz789"
+          },
+          "permissions": {
+            "type": "array",
+            "description": "List of permissions granted (e.g., accounts:read, transactions:read).",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "accounts:read",
+              "transactions:read"
+            ]
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "Current status of the consent (e.g., PENDING_AUTHORIZATION, AUTHORIZED, REVOKED, EXPIRED).",
+            "enum": [
+              "PENDING_AUTHORIZATION",
+              "AUTHORIZED",
+              "REVOKED",
+              "EXPIRED"
+            ],
+            "example": "AUTHORIZED"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date and time when the consent was created (ISO 8601)."
+          },
+          "authorizedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date and time when the consent was authorized by the customer (ISO 8601). Null if not yet authorized.",
+            "nullable": true
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Date and time when the consent will expire (ISO 8601).",
+            "nullable": true
+          }
+        },
+        "required": [
+          "consentId",
+          "customerRef",
+          "thirdPartyId",
+          "permissions",
+          "statusCode",
+          "createdAt"
+        ]
+      },
+      "ConsentCreationRequest": {
+        "type": "object",
+        "description": "Request body for creating a new consent.",
+        "properties": {
+          "customerRef": {
+            "type": "string",
+            "description": "The customer who is granting the consent.",
+            "example": "cust_vwx234"
+          },
+          "thirdPartyId": {
+            "type": "string",
+            "description": "Identifier of the Third-Party Provider (TPP) requesting consent.",
+            "example": "tpp_xyz789"
+          },
+          "permissions": {
+            "type": "array",
+            "description": "List of permissions requested by the TPP (e.g., accounts:read, transactions:read).",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "example": [
+              "accounts:read",
+              "transactions:read"
+            ]
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional date and time when the consent should expire (ISO 8601). If not provided, default expiry will be applied.",
+            "nullable": true
+          },
+          "redirectUri": {
+            "type": "string",
+            "format": "uri",
+            "description": "The URI to which the customer will be redirected after authorization.",
+            "example": "https://tpp.example.com/callback"
+          }
+        },
+        "required": [
+          "customerRef",
+          "thirdPartyId",
+          "permissions",
+          "redirectUri"
+        ]
+      },
+      "ConsentUpdateRequest": {
+        "type": "object",
+        "description": "Request body for updating an existing consent.",
+        "properties": {
+          "statusCode": {
+            "type": "string",
+            "description": "The new status for the consent (e.g., REVOKED).",
+            "enum": [
+              "REVOKED",
+              "EXPIRED"
+            ],
+            "example": "REVOKED"
+          },
+          "revocationReason": {
+            "type": "string",
+            "description": "Optional reason for revoking the consent.",
+            "maxLength": 500,
+            "example": "Customer requested revocation"
+          }
+        },
+        "required": [
+          "statusCode"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "OAuth2AuthorizationCode": {
+        "type": "oauth2",
+        "description": "OAuth 2.0 Authorization Code Flow for user-facing applications.",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://auth.example.com/oauth2/authorize",
+            "tokenUrl": "https://auth.example.com/oauth2/token",
+            "scopes": {
+              "accounts:read": "Read customer account information",
+              "accounts:write": "Initiate transfers and manage account settings",
+              "transactions:read": "Read transaction history",
+              "transactions:write": "Initiate new transactions (e.g., bill payments)",
+              "payments:initiate": "Initiate payments with Strong Customer Authentication (SCA)",
+              "cards:manage": "View, block, and unblock customer cards",
+              "customers:manage": "Manage customer profiles and KYC status",
+              "consent:manage": "Create and manage Open Banking consent agreements"
+            }
+          }
+        }
+      },
+      "OAuth2ClientCredentials": {
+        "type": "oauth2",
+        "description": "OAuth 2.0 Client Credentials Flow for machine-to-machine communication (e.g., internal services).",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "https://auth.example.com/oauth2/token",
+            "scopes": {
+              "internal:read": "Internal read access to all resources",
+              "internal:write": "Internal write access to all resources"
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "LimitParam": {
+        "name": "limit",
+        "in": "query",
+        "description": "Maximum number of items to return per page.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10
+        },
+        "example": 10
+      },
+      "OffsetParam": {
+        "name": "offset",
+        "in": "query",
+        "description": "Number of items to skip before starting to collect the result set.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "default": 0
+        },
+        "example": 0
+      },
+      "AccountRefParam": {
+        "name": "accountRef",
+        "in": "path",
+        "description": "Unique identifier for the bank account.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^acc_[a-zA-Z0-9]{5,30}$"
+        },
+        "example": "acc_12345"
+      },
+      "TransactionIdParam": {
+        "name": "transactionId",
+        "in": "path",
+        "description": "Unique identifier for the transaction.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^txn_[a-zA-Z0-9]{5,30}$"
+        },
+        "example": "txn_abc123"
+      },
+      "CardIdParam": {
+        "name": "cardId",
+        "in": "path",
+        "description": "Unique identifier for the card.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^card_[a-zA-Z0-9]{5,30}$"
+        },
+        "example": "card_pqr678"
+      },
+      "CustomerRefParam": {
+        "name": "customerRef",
+        "in": "path",
+        "description": "Unique identifier for the customer.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^cust_[a-zA-Z0-9]{5,30}$"
+        },
+        "example": "cust_vwx234"
+      },
+      "ConsentIdParam": {
+        "name": "consentId",
+        "in": "path",
+        "description": "Unique identifier for the consent agreement.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^con_[a-zA-Z0-9]{5,30}$"
+        },
+        "example": "con_1a2b3c"
+      },
+      "XRequestID": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "description": "A unique identifier for the request, useful for tracing and debugging across services. If not provided, the server will generate one.",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "example": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+      }
+    },
+    "headers": {
+      "IdempotencyKeyHeader": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "description": "A unique key that the client provides to prevent duplicate requests. If a request with the same key is received, the server will return the same response as the original request without re-processing it.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "example": "e0a1b2c3-d4e5-f6a7-b8c9-d0e1f2a3b4c5"
+      },
+      "RateLimitLimit": {
+        "description": "The maximum number of requests that the client can make in the current rate limit window.",
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "RateLimitRemaining": {
+        "description": "The number of requests remaining in the current rate limit window.",
+        "schema": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "X-RateLimit-Reset": {
+        "description": "The time at which the current rate limit window resets in UTC epoch seconds.",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "XRequestIDResponse": {
+        "description": "A unique identifier for the request, echoed back from the client or generated by the server, useful for tracing and debugging across services.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Bad Request: The request was malformed or invalid.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestIDResponse"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "invalidInput": {
+                "value": {
+                  "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid input provided. Check 'details' for specific errors.",
+                    "details": [
+                      {
+                        "field": "totalAmount",
+                        "message": "Amount must be greater than zero."
+                      }
+                    ],
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Unauthorized: Authentication is required or has failed.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestIDResponse"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "missingToken": {
+                "value": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "Authentication token is missing or invalid.",
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Forbidden: The client does not have sufficient permissions to access the resource.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestIDResponse"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "insufficientScope": {
+                "value": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Insufficient permissions. Required scope: accounts:write.",
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Not Found: The requested resource could not be found.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestIDResponse"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "resourceNotFound": {
+                "value": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Account with ID 'acc_nonexistent' not found.",
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Conflict: The request could not be completed due to a conflict with the current state of the resource (e.g., duplicate entry, idempotency key mismatch).",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestIDResponse"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "idempotencyConflict": {
+                "value": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Idempotency key already used with a different request payload.",
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal Server Error: An unexpected error occurred on the server.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/XRequestIDResponse"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "examples": {
+              "serverError": {
+                "value": {
+                  "error": {
+                    "code": "INTERNAL_ERROR",
+                    "message": "An unexpected error occurred. Please try again later.",
+                    "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
