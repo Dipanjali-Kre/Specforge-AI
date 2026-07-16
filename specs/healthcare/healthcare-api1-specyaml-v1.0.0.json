@@ -651,6 +651,9 @@
             "$ref": "#/components/parameters/RequestIdHeader"
           },
           {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
             "name": "patientId",
             "in": "path",
             "description": "Unique identifier of the patient to be deleted.",
