@@ -3,7 +3,7 @@
   "info": {
     "title": "Banking API",
     "version": "1.0.0",
-    "description": "The Banking API provides secure access to customer accounts, transactions, and financial data, enabling seamless integration for banking applications and services.\n\n**Compliance Requirements:**\n- **PCI-DSS:** Never exposes full card numbers (PAN) in responses. Uses masking (last 4 digits).\n- **PSD2/Open Banking:** Includes consent management endpoints.\n- **KYC/AML:** Customer onboarding includes identity verification steps.\n- **Monetary Amounts:** All monetary amounts use explicit decimal with `currencyCode` (ISO 4217).\n\n**Security:**\n- **OAuth 2.0:** With scope-based access (`accounts:read`, `transactions:write`, etc.).\n- **Strong Customer Authentication (SCA):** For payment initiation.\n- **Rate Limiting:** On sensitive endpoints (e.g., transactions).\n- **Idempotency Keys:** For POST operations (`Idempotency-Key` header).",
+    "description": "This API provides a comprehensive set of functionalities for managing core banking operations, including customer accounts, transactions, and financial data retrieval. Adheres to PCI-DSS, PSD2/Open Banking, and KYC/AML compliance requirements.\n\n**Operational Details:**\n- **Logging & Audit Trails:** All API requests and significant state changes are logged for auditing purposes. Logs include request/response payloads, timestamps, and originating IP addresses.\n- **Service Level Agreements (SLAs):** The API aims for a 99.9% uptime. Specific endpoint response time targets and error rates are detailed in the accompanying SLA documentation. Clients should implement appropriate retry mechanisms with exponential backoff.\n- **Timeouts:** API endpoints are configured with a maximum processing timeout of 30 seconds. Requests exceeding this duration will be terminated and return a 504 Gateway Timeout error (not explicitly modeled here but implied by operational context).",
     "contact": {
       "name": "API Support",
       "url": "https://www.example.com/support",
@@ -26,18 +26,17 @@
   ],
   "security": [
     {
-      "OAuth2Auth": [
+      "OAuth2ClientCredentials": [
         "accounts:read",
         "accounts:write",
         "transactions:read",
         "transactions:write",
-        "payments:initiate",
-        "cards:read",
-        "cards:block",
         "customers:read",
-        "customers:manage",
-        "consents:read",
-        "consents:manage"
+        "customers:write",
+        "cards:read",
+        "cards:write",
+        "payments:initiate",
+        "consent:manage"
       ]
     }
   ],
@@ -48,113 +47,777 @@
     },
     {
       "name": "Transactions",
-      "description": "Operations related to financial transactions."
+      "description": "Operations for managing financial transactions."
+    },
+    {
+      "name": "Customers",
+      "description": "Operations for managing customer profiles and KYC."
+    },
+    {
+      "name": "Cards",
+      "description": "Operations for managing customer payment cards."
     },
     {
       "name": "Payments",
       "description": "Operations for initiating and managing payments."
     },
     {
-      "name": "Cards",
-      "description": "Operations related to customer debit/credit cards."
+      "name": "Consent",
+      "description": "Operations for managing customer consent under regulations like PSD2."
     },
     {
-      "name": "Customers",
-      "description": "Operations related to customer profiles and KYC."
-    },
-    {
-      "name": "Consent Management",
-      "description": "Operations for managing customer data consents (PSD2/Open Banking)."
+      "name": "System",
+      "description": "System-level operations like health checks."
     }
   ],
   "paths": {
-    "/accounts": {
+    "/health": {
       "get": {
-        "tags": ["Accounts"],
-        "summary": "List customer accounts",
-        "description": "Retrieves a paginated list of all bank accounts associated with the authenticated customer. Requires `accounts:read` scope.",
-        "operationId": "listCustomerAccounts",
-        "security": [
-          {
-            "OAuth2Auth": ["accounts:read"]
-          }
+        "tags": [
+          "System"
         ],
+        "summary": "Health Check",
+        "description": "Checks the health and availability of the API. Returns 200 OK if the service is operational.",
+        "operationId": "getHealthStatus",
         "parameters": [
           {
-            "name": "limit",
-            "in": "query",
-            "description": "Maximum number of items to return per page.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            },
-            "example": 10
+            "$ref": "#/components/parameters/XRequestIdHeader"
           },
           {
-            "name": "offset",
-            "in": "query",
-            "description": "Number of items to skip before starting to collect the result set.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0,
-              "default": 0
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "API is healthy and operational.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
             },
-            "example": 0
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "UP"
+                      ],
+                      "example": "UP"
+                    },
+                    "timestamp": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2023-10-27T11:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable - API is not healthy or experiencing issues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T11:00:00Z",
+                  "statusCode": "ERROR",
+                  "message": "Service is currently unavailable.",
+                  "errorCode": "SERVICE_UNAVAILABLE"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/customers": {
+      "get": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "List all customers",
+        "description": "Retrieves a paginated list of all banking customers. Requires `customers:read` scope.",
+        "operationId": "listCustomers",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A paginated list of customers.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Customer"
+                              },
+                              "description": "Array of customer objects."
+                            },
+                            "pagination": {
+                              "$ref": "#/components/schemas/Pagination"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:00:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Customers retrieved successfully.",
+                  "data": {
+                    "items": [
+                      {
+                        "customerRef": "cust_abcdef1234567890",
+                        "firstName": "John",
+                        "lastName": "Doe",
+                        "email": "john.doe@example.com",
+                        "phoneNumber": "+15551234567",
+                        "dateOfBirth": "1985-06-20",
+                        "kycStatusCode": "VERIFIED",
+                        "createdAt": "2022-01-01T10:00:00Z",
+                        "updatedAt": "2023-10-27T11:00:00Z"
+                      },
+                      {
+                        "customerRef": "cust_fedcba0987654321",
+                        "firstName": "Jane",
+                        "lastName": "Smith",
+                        "email": "jane.smith@example.com",
+                        "phoneNumber": "+15557654321",
+                        "dateOfBirth": "1990-03-10",
+                        "kycStatusCode": "PENDING",
+                        "createdAt": "2023-05-15T09:00:00Z",
+                        "updatedAt": "2023-05-15T09:00:00Z"
+                      }
+                    ],
+                    "pagination": {
+                      "totalCount": 2,
+                      "limit": 10,
+                      "nextCursor": "eyJpZCI6ImN1c3RfZmVkY2JhMDk4NzY1NDMyMSIsImNyZWF0ZWRBdCI6IjIwMjMtMDUtMTVUMDk6MDA6MDBaIn0=",
+                      "previousCursor": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/401Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/500InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "OAuth2ClientCredentials": [
+              "customers:read"
+            ]
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Create a new customer",
+        "description": "Registers a new banking customer. Initiates the KYC process. Requires `customers:write` scope.",
+        "operationId": "createCustomer",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "description": "Customer details for creation.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomerRequest"
+              },
+              "example": {
+                "firstName": "Alice",
+                "lastName": "Smith",
+                "email": "alice.smith@example.com",
+                "phoneNumber": "+15559876543",
+                "dateOfBirth": "1990-03-10",
+                "address": {
+                  "street": "123 Main St",
+                  "city": "Anytown",
+                  "state": "CA",
+                  "postalCode": "90210",
+                  "country": "USA"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Customer created successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Customer"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:05:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Customer created successfully. KYC verification initiated.",
+                  "data": {
+                    "customerRef": "cust_newcustomer123",
+                    "firstName": "Alice",
+                    "lastName": "Smith",
+                    "email": "alice.smith@example.com",
+                    "phoneNumber": "+15559876543",
+                    "dateOfBirth": "1990-03-10",
+                    "kycStatusCode": "PENDING",
+                    "createdAt": "2023-10-27T10:05:00Z",
+                    "updatedAt": "2023-10-27T10:05:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/401Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/409Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/500InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "OAuth2ClientCredentials": [
+              "customers:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/customers/{customerRef}": {
+      "get": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Get customer details by ID",
+        "description": "Retrieves the detailed profile of a specific customer. Requires `customers:read` scope.",
+        "operationId": "getCustomerById",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CustomerRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Customer details retrieved successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Customer"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:10:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Customer details retrieved.",
+                  "data": {
+                    "customerRef": "cust_abcdef1234567890",
+                    "firstName": "John",
+                    "lastName": "Doe",
+                    "email": "john.doe@example.com",
+                    "phoneNumber": "+15551234567",
+                    "dateOfBirth": "1985-06-20",
+                    "kycStatusCode": "VERIFIED",
+                    "createdAt": "2022-01-01T10:00:00Z",
+                    "updatedAt": "2023-10-27T11:00:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/404NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/500InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "OAuth2ClientCredentials": [
+              "customers:read"
+            ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Update customer details",
+        "description": "Updates specific fields of an existing customer's profile. Requires `customers:write` scope.",
+        "operationId": "updateCustomer",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CustomerRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "description": "Partial customer details to update.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomerRequest"
+              },
+              "example": {
+                "phoneNumber": "+15551112222",
+                "email": "john.newemail@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Customer details updated successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Customer"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:15:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Customer details updated.",
+                  "data": {
+                    "customerRef": "cust_abcdef1234567890",
+                    "firstName": "John",
+                    "lastName": "Doe",
+                    "email": "john.newemail@example.com",
+                    "phoneNumber": "+15551112222",
+                    "dateOfBirth": "1985-06-20",
+                    "kycStatusCode": "VERIFIED",
+                    "createdAt": "2022-01-01T10:00:00Z",
+                    "updatedAt": "2023-10-27T10:15:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/401Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/404NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/500InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "OAuth2ClientCredentials": [
+              "customers:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/customers/{customerRef}/kyc-verification": {
+      "post": {
+        "tags": [
+          "Customers"
+        ],
+        "summary": "Initiate or update KYC verification for a customer",
+        "description": "Submits or updates identity documents for Know Your Customer (KYC) verification. Requires `customers:write` scope.",
+        "operationId": "initiateKycVerification",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CustomerRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "description": "KYC document details.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KycVerificationRequest"
+              },
+              "example": {
+                "documentType": "PASSPORT",
+                "documentNumber": "P12345678",
+                "issueDate": "2020-01-01",
+                "expiryDate": "2030-01-01",
+                "selfieDocumentUrl": "https://cdn.example.com/kyc/selfie_cust123.jpg"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "KYC verification initiated/updated successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "customerRef": {
+                              "type": "string",
+                              "pattern": "^cust_[a-zA-Z0-9]{10,30}$",
+                              "example": "cust_abcdef1234567890"
+                            },
+                            "kycStatusCode": {
+                              "type": "string",
+                              "enum": [
+                                "PENDING",
+                                "VERIFIED",
+                                "REJECTED"
+                              ],
+                              "example": "PENDING"
+                            },
+                            "verificationId": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Unique ID for the KYC verification attempt.",
+                              "example": "kyc_verify_12345"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:20:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "KYC verification submitted for review.",
+                  "data": {
+                    "customerRef": "cust_abcdef1234567890",
+                    "kycStatusCode": "PENDING",
+                    "verificationId": "kyc_verify_12345"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/401Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/404NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/500InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "OAuth2ClientCredentials": [
+              "customers:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/customers/{customerRef}/accounts": {
+      "get": {
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "List customer accounts",
+        "description": "Retrieves a paginated list of all bank accounts belonging to a specific customer. Requires `accounts:read` scope.",
+        "operationId": "listCustomerAccounts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CustomerRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
           }
         ],
         "responses": {
           "200": {
             "description": "A paginated list of customer accounts.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedAccountsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful response for listing accounts",
-                    "value": {
-                      "timestamp": "2023-10-27T10:00:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Accounts retrieved successfully.",
-                      "data": {
-                        "items": [
-                          {
-                            "accountRef": "acc_12345",
-                            "accountNumber": "1234567890",
-                            "accountType": "SAVINGS",
-                            "balanceAmount": 1500.75,
-                            "currencyCode": "USD",
-                            "statusCode": "ACTIVE",
-                            "accountHolder": "John Doe",
-                            "openedDate": "2020-01-15"
-                          },
-                          {
-                            "accountRef": "acc_67890",
-                            "accountNumber": "0987654321",
-                            "accountType": "CHECKING",
-                            "balanceAmount": 3200.50,
-                            "currencyCode": "USD",
-                            "statusCode": "ACTIVE",
-                            "accountHolder": "John Doe",
-                            "openedDate": "2018-03-20"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Account"
+                              },
+                              "description": "Array of account objects."
+                            },
+                            "pagination": {
+                              "$ref": "#/components/schemas/Pagination"
+                            }
                           }
-                        ],
-                        "pagination": {
-                          "limit": 20,
-                          "offset": 0,
-                          "totalCount": 2,
-                          "totalPages": 1,
-                          "hasNextPage": false,
-                          "hasPreviousPage": false
                         }
                       }
+                    }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:25:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Customer accounts retrieved successfully.",
+                  "data": {
+                    "items": [
+                      {
+                        "accountRef": "acc_1234567890",
+                        "customerRef": "cust_abcdef1234567890",
+                        "accountType": "CHECKING",
+                        "currency": "USD",
+                        "balance": 1500.75,
+                        "status": "ACTIVE",
+                        "createdAt": "2022-01-01T10:00:00Z",
+                        "updatedAt": "2023-10-27T10:25:00Z"
+                      },
+                      {
+                        "accountRef": "acc_0987654321",
+                        "customerRef": "cust_abcdef1234567890",
+                        "accountType": "SAVINGS",
+                        "currency": "USD",
+                        "balance": 5000.00,
+                        "status": "ACTIVE",
+                        "createdAt": "2022-03-01T11:00:00Z",
+                        "updatedAt": "2023-10-27T10:25:00Z"
+                      }
+                    ],
+                    "pagination": {
+                      "totalCount": 2,
+                      "limit": 10,
+                      "nextCursor": "eyJpZCI6ImFjY18wOTg3NjU0MzIxIiwiY3JlYXRlZEF0IjoiMjAyMi0wMy0wMVQxMTowMDowMFoifQ==",
+                      "previousCursor": null
                     }
                   }
                 }
@@ -162,147 +825,369 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "$ref": "#/components/responses/400BadRequest"
           },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
+            "$ref": "#/components/responses/401Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/404NotFound"
           },
           "500": {
-            "$ref": "#/components/responses/InternalServerError"
+            "$ref": "#/components/responses/500InternalServerError"
           }
-        }
-      }
-    },
-    "/accounts/{accountRef}": {
-      "get": {
-        "tags": ["Accounts"],
-        "summary": "Get account details",
-        "description": "Retrieves detailed information for a specific bank account identified by `accountRef`. Requires `accounts:read` scope.",
-        "operationId": "getAccountDetails",
+        },
         "security": [
           {
-            "OAuth2Auth": ["accounts:read"]
+            "OAuth2ClientCredentials": [
+              "accounts:read"
+            ]
           }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Accounts"
         ],
+        "summary": "Create a new account for a customer",
+        "description": "Creates a new bank account for the specified customer. Requires `accounts:write` scope.",
+        "operationId": "createCustomerAccount",
         "parameters": [
           {
-            "name": "accountRef",
-            "in": "path",
-            "description": "Unique identifier for the account.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^acc_[a-zA-Z0-9]{5,30}$"
+            "$ref": "#/components/parameters/CustomerRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "description": "Account details for creation.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccountRequest"
+              },
+              "example": {
+                "accountType": "SAVINGS",
+                "currency": "USD",
+                "initialDeposit": 100.00
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account created successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
             },
-            "example": "acc_12345"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Account"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:30:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Account created successfully.",
+                  "data": {
+                    "accountRef": "acc_newaccount123",
+                    "customerRef": "cust_abcdef1234567890",
+                    "accountType": "SAVINGS",
+                    "currency": "USD",
+                    "balance": 100.00,
+                    "status": "ACTIVE",
+                    "createdAt": "2023-10-27T10:30:00Z",
+                    "updatedAt": "2023-10-27T10:30:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/401Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/404NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/500InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "OAuth2ClientCredentials": [
+              "accounts:write"
+            ]
+          }
+        ]
+      }
+    },
+    "/customers/{customerRef}/accounts/{accountRef}": {
+      "get": {
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "Get a specific customer account",
+        "description": "Retrieves details for a specific bank account belonging to a customer. Requires `accounts:read` scope.",
+        "operationId": "getCustomerAccountById",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CustomerRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/AccountRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
           }
         ],
         "responses": {
           "200": {
-            "description": "Details of the specified account.",
+            "description": "Account details retrieved successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccountDetailsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful response for account details",
-                    "value": {
-                      "timestamp": "2023-10-27T10:05:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Account details retrieved successfully.",
-                      "data": {
-                        "accountRef": "acc_12345",
-                        "accountNumber": "1234567890",
-                        "accountType": "SAVINGS",
-                        "balanceAmount": 1500.75,
-                        "currencyCode": "USD",
-                        "statusCode": "ACTIVE",
-                        "accountHolder": "John Doe",
-                        "openedDate": "2020-01-15"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Account"
+                        }
                       }
                     }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:35:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Account details retrieved.",
+                  "data": {
+                    "accountRef": "acc_1234567890",
+                    "customerRef": "cust_abcdef1234567890",
+                    "accountType": "CHECKING",
+                    "currency": "USD",
+                    "balance": 1500.75,
+                    "status": "ACTIVE",
+                    "createdAt": "2022-01-01T10:00:00Z",
+                    "updatedAt": "2023-10-27T10:25:00Z"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/403Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/404NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/500InternalServerError"
+          }
+        },
+        "security": [
+          {
+            "OAuth2ClientCredentials": [
+              "accounts:read"
+            ]
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "Update a customer account",
+        "description": "Updates specific fields of an existing customer's bank account. Requires `accounts:write` scope.",
+        "operationId": "updateCustomerAccount",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CustomerRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/AccountRefParam"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
+          }
+        ],
+        "requestBody": {
+          "description": "Partial account details to update.",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccountRequest"
+              },
+              "example": {
+                "status": "INACTIVE"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account details updated successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Account"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:40:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Account status updated.",
+                  "data": {
+                    "accountRef": "acc_1234567890",
+                    "customerRef": "cust_abcdef1234567890",
+                    "accountType": "CHECKING",
+                    "currency": "USD",
+                    "balance": 1500.75,
+                    "status": "INACTIVE",
+                    "createdAt": "2022-01-01T10:00:00Z",
+                    "updatedAt": "2023-10-27T10:40:00Z"
                   }
                 }
               }
             }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "$ref": "#/components/responses/400BadRequest"
           },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
+            "$ref": "#/components/responses/401Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "$ref": "#/components/responses/403Forbidden"
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "$ref": "#/components/responses/404NotFound"
           },
           "500": {
-            "$ref": "#/components/responses/InternalServerError"
+            "$ref": "#/components/responses/500InternalServerError"
           }
-        }
-      }
-    },
-    "/accounts/{accountRef}/transactions": {
-      "get": {
-        "tags": ["Transactions", "Accounts"],
-        "summary": "List transactions for an account",
-        "description": "Retrieves a paginated list of transactions for a specific bank account. Requires `transactions:read` scope.",
-        "operationId": "listAccountTransactions",
+        },
         "security": [
           {
-            "OAuth2Auth": ["transactions:read"]
+            "OAuth2ClientCredentials": [
+              "accounts:write"
+            ]
           }
+        ]
+      }
+    },
+    "/customers/{customerRef}/accounts/{accountRef}/transactions": {
+      "get": {
+        "tags": [
+          "Transactions"
         ],
+        "summary": "List account transactions",
+        "description": "Retrieves a paginated list of transactions for a specific bank account. Requires `transactions:read` scope.",
+        "operationId": "listAccountTransactions",
         "parameters": [
           {
-            "name": "accountRef",
-            "in": "path",
-            "description": "Unique identifier for the account.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^acc_[a-zA-Z0-9]{5,30}$"
-            },
-            "example": "acc_12345"
+            "$ref": "#/components/parameters/CustomerRefParam"
           },
           {
-            "name": "limit",
-            "in": "query",
-            "description": "Maximum number of items to return per page.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            },
-            "example": 10
+            "$ref": "#/components/parameters/AccountRefParam"
           },
           {
-            "name": "offset",
-            "in": "query",
-            "description": "Number of items to skip before starting to collect the result set.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0,
-              "default": 0
-            },
-            "example": 0
+            "$ref": "#/components/parameters/LimitParam"
+          },
+          {
+            "$ref": "#/components/parameters/CursorParam"
           },
           {
             "name": "startDate",
             "in": "query",
-            "description": "Filter transactions from this date (inclusive). Format: YYYY-MM-DD.",
+            "description": "Filter transactions from this date (inclusive).",
             "required": false,
             "schema": {
               "type": "string",
@@ -313,1003 +1198,1293 @@
           {
             "name": "endDate",
             "in": "query",
-            "description": "Filter transactions up to this date (inclusive). Format: YYYY-MM-DD.",
+            "description": "Filter transactions up to this date (inclusive).",
             "required": false,
             "schema": {
               "type": "string",
               "format": "date"
             },
-            "example": "2023-10-27"
+            "example": "2023-12-31"
           },
           {
-            "name": "transactionType",
+            "name": "type",
             "in": "query",
-            "description": "Filter transactions by type.",
+            "description": "Filter transactions by type (e.g., DEBIT, CREDIT).",
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["DEBIT", "CREDIT", "TRANSFER", "PAYMENT"]
+              "enum": [
+                "DEBIT",
+                "CREDIT"
+              ]
             },
             "example": "DEBIT"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
           }
         ],
         "responses": {
           "200": {
-            "description": "A paginated list of transactions for the specified account.",
+            "description": "A paginated list of account transactions.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedTransactionsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful response for listing account transactions",
-                    "value": {
-                      "timestamp": "2023-10-27T10:10:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Transactions retrieved successfully.",
-                      "data": {
-                        "items": [
-                          {
-                            "transactionId": "txn_abc123",
-                            "accountRef": "acc_12345",
-                            "totalAmount": -50.00,
-                            "currencyCode": "USD",
-                            "transactionType": "DEBIT",
-                            "eventTimestamp": "2023-10-26T14:30:00Z",
-                            "description": "Coffee Shop Purchase",
-                            "merchantName": "Starbucks",
-                            "statusCode": "COMPLETED"
-                          },
-                          {
-                            "transactionId": "txn_def456",
-                            "accountRef": "acc_12345",
-                            "totalAmount": 200.00,
-                            "currencyCode": "USD",
-                            "transactionType": "CREDIT",
-                            "eventTimestamp": "2023-10-25T09:00:00Z",
-                            "description": "Salary Deposit",
-                            "merchantName": "Employer Inc.",
-                            "statusCode": "COMPLETED"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/Transaction"
+                              },
+                              "description": "Array of transaction objects."
+                            },
+                            "pagination": {
+                              "$ref": "#/components/schemas/Pagination"
+                            }
                           }
-                        ],
-                        "pagination": {
-                          "limit": 20,
-                          "offset": 0,
-                          "totalCount": 2,
-                          "totalPages": 1,
-                          "hasNextPage": false,
-                          "hasPreviousPage": false
                         }
                       }
                     }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:45:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Account transactions retrieved successfully.",
+                  "data": {
+                    "items": [
+                      {
+                        "transactionRef": "txn_abc123",
+                        "accountRef": "acc_1234567890",
+                        "type": "DEBIT",
+                        "amount": 50.00,
+                        "currency": "USD",
+                        "description": "Coffee Shop",
+                        "status": "COMPLETED",
+                        "timestamp": "2023-10-26T09:30:00Z"
+                      },
+                      {
+                        "transactionRef": "txn_def456",
+                        "accountRef": "acc_1234567890",
+                        "type": "CREDIT",
+                        "amount": 1000.00,
+                        "currency": "USD",
+                        "description": "Salary Deposit",
+                        "status": "COMPLETED",
+                        "timestamp": "2023-10-25T15:00:00Z"
+                      }
+                    ],
+                    "pagination": {
+                      "totalCount": 2,
+                      "limit": 10,
+                      "nextCursor": "eyJpZCI6InR4bl9kZWY0NTYiLCJ0aW1lc3RhbXAiOiIyMDIzLTEwLTI1VDE1OjAwOjAwWiJ9",
+                      "previousCursor": null
+                    }
                   }
                 }
               }
             }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "$ref": "#/components/responses/400BadRequest"
           },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
+            "$ref": "#/components/responses/401Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "$ref": "#/components/responses/403Forbidden"
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "$ref": "#/components/responses/404NotFound"
           },
           "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/transactions": {
-      "post": {
-        "tags": ["Transactions"],
-        "summary": "Initiate a new transaction",
-        "description": "Initiates a new financial transaction, such as a transfer between accounts. Requires `transactions:write` scope. This endpoint supports idempotency via the `Idempotency-Key` header.",
-        "operationId": "initiateTransaction",
-        "security": [
-          {
-            "OAuth2Auth": ["transactions:write"]
-          }
-        ],
-        "parameters": [
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "A unique key to ensure that the request is processed only once. This helps prevent duplicate transactions if a request is retried.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "example": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
-          }
-        ],
-        "requestBody": {
-          "description": "Details for the new transaction.",
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTransactionRequest"
-              },
-              "examples": {
-                "transferExample": {
-                  "summary": "Example of an account transfer",
-                  "value": {
-                    "sourceAccountRef": "acc_12345",
-                    "destinationAccountRef": "acc_67890",
-                    "totalAmount": 100.00,
-                    "currencyCode": "USD",
-                    "transactionType": "TRANSFER",
-                    "description": "Monthly rent payment"
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/500InternalServerError"
           }
         },
-        "responses": {
-          "201": {
-            "description": "Transaction initiated successfully. Returns the new transaction details.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransactionDetailsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful transaction initiation",
-                    "value": {
-                      "timestamp": "2023-10-27T10:15:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Transaction initiated successfully.",
-                      "data": {
-                        "transactionId": "txn_ghi789",
-                        "sourceAccountRef": "acc_12345",
-                        "destinationAccountRef": "acc_67890",
-                        "totalAmount": 100.00,
-                        "currencyCode": "USD",
-                        "transactionType": "TRANSFER",
-                        "eventTimestamp": "2023-10-27T10:15:00Z",
-                        "description": "Monthly rent payment",
-                        "statusCode": "PENDING"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/transactions/{transactionId}": {
-      "get": {
-        "tags": ["Transactions"],
-        "summary": "Get transaction status and details",
-        "description": "Retrieves the current status and full details of a specific transaction. Requires `transactions:read` scope.",
-        "operationId": "getTransactionDetails",
         "security": [
           {
-            "OAuth2Auth": ["transactions:read"]
+            "OAuth2ClientCredentials": [
+              "transactions:read"
+            ]
           }
-        ],
-        "parameters": [
-          {
-            "name": "transactionId",
-            "in": "path",
-            "description": "Unique identifier for the transaction.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^txn_[a-zA-Z0-9]{5,30}$"
-            },
-            "example": "txn_ghi789"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Details of the specified transaction.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransactionDetailsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful response for transaction details",
-                    "value": {
-                      "timestamp": "2023-10-27T10:20:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Transaction details retrieved successfully.",
-                      "data": {
-                        "transactionId": "txn_ghi789",
-                        "sourceAccountRef": "acc_12345",
-                        "destinationAccountRef": "acc_67890",
-                        "totalAmount": 100.00,
-                        "currencyCode": "USD",
-                        "transactionType": "TRANSFER",
-                        "eventTimestamp": "2023-10-27T10:15:00Z",
-                        "description": "Monthly rent payment",
-                        "statusCode": "COMPLETED"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
+        ]
       }
     },
     "/payments": {
       "post": {
-        "tags": ["Payments"],
-        "summary": "Initiate a new payment",
-        "description": "Initiates a new payment from a customer's account to a beneficiary. This endpoint requires Strong Customer Authentication (SCA) and supports idempotency via the `Idempotency-Key` header.",
-        "operationId": "initiatePayment",
-        "security": [
-          {
-            "OAuth2Auth": ["payments:initiate"]
-          }
+        "tags": [
+          "Payments"
         ],
+        "summary": "Initiate a new payment",
+        "description": "Initiates a new payment from a customer's account to a specified recipient. Requires `payments:initiate` scope.",
+        "operationId": "initiatePayment",
         "parameters": [
           {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "A unique key to ensure that the request is processed only once. This helps prevent duplicate payments if a request is retried.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "example": "f1e2d3c4-b5a6-9876-5432-10fedcba9876"
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
           }
         ],
         "requestBody": {
-          "description": "Details for the new payment, including SCA challenge data if applicable.",
+          "description": "Payment details.",
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/InitiatePaymentRequest"
               },
-              "examples": {
-                "paymentExample": {
-                  "summary": "Example of a payment initiation",
-                  "value": {
-                    "sourceAccountRef": "acc_12345",
-                    "beneficiaryName": "Utility Company",
-                    "beneficiaryAccount": "9876543210",
-                    "beneficiaryBankCode": "BANKUS33",
-                    "totalAmount": 75.50,
-                    "currencyCode": "USD",
-                    "description": "Monthly utility bill",
-                    "scaChallengeData": {
-                      "challengeType": "OTP",
-                      "challengeValue": "123456"
-                    }
-                  }
-                }
+              "example": {
+                "sourceAccountRef": "acc_1234567890",
+                "destinationAccountRef": "acc_partner987",
+                "amount": 100.50,
+                "currency": "USD",
+                "description": "Online purchase",
+                "paymentMethod": "BANK_TRANSFER"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Payment initiated successfully. May require further SCA confirmation.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaymentInitiationResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful payment initiation",
-                    "value": {
-                      "timestamp": "2023-10-27T10:25:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Payment initiated successfully. Awaiting SCA confirmation.",
-                      "data": {
-                        "paymentId": "pay_jkl012",
-                        "sourceAccountRef": "acc_12345",
-                        "totalAmount": 75.50,
-                        "currencyCode": "USD",
-                        "statusCode": "PENDING_SCA",
-                        "scaRequired": true,
-                        "scaMethod": "OTP_SMS",
-                        "scaReference": "sca_ref_xyz"
-                      }
-                    }
-                  }
-                }
+            "description": "Payment initiated successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
               }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "description": "Unprocessable Entity - SCA challenge required or failed.",
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "scaRequired": {
-                    "summary": "SCA Challenge Required",
-                    "value": {
-                      "error": {
-                        "code": "SCA_REQUIRED",
-                        "message": "Strong Customer Authentication is required to complete this payment.",
-                        "details": [
-                          {
-                            "field": "scaChallengeData",
-                            "message": "Missing or invalid SCA challenge data."
-                          }
-                        ],
-                        "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/cards": {
-      "get": {
-        "tags": ["Cards"],
-        "summary": "List customer cards",
-        "description": "Retrieves a paginated list of all debit and credit cards associated with the authenticated customer. Card numbers are masked for PCI-DSS compliance. Requires `cards:read` scope.",
-        "operationId": "listCustomerCards",
-        "security": [
-          {
-            "OAuth2Auth": ["cards:read"]
-          }
-        ],
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Maximum number of items to return per page.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            },
-            "example": 10
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "description": "Number of items to skip before starting to collect the result set.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0,
-              "default": 0
-            },
-            "example": 0
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A paginated list of customer cards.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaginatedCardsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful response for listing cards",
-                    "value": {
-                      "timestamp": "2023-10-27T10:30:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Cards retrieved successfully.",
-                      "data": {
-                        "items": [
-                          {
-                            "cardId": "card_1111",
-                            "maskedCardNumber": "************1234",
-                            "cardType": "DEBIT",
-                            "expiryDate": "12/25",
-                            "statusCode": "ACTIVE",
-                            "cardholderName": "John Doe"
-                          },
-                          {
-                            "cardId": "card_2222",
-                            "maskedCardNumber": "************5678",
-                            "cardType": "CREDIT",
-                            "expiryDate": "06/27",
-                            "statusCode": "ACTIVE",
-                            "cardholderName": "John Doe"
-                          }
-                        ],
-                        "pagination": {
-                          "limit": 20,
-                          "offset": 0,
-                          "totalCount": 2,
-                          "totalPages": 1,
-                          "hasNextPage": false,
-                          "hasPreviousPage": false
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Payment"
                         }
                       }
                     }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/cards/{cardId}/block": {
-      "post": {
-        "tags": ["Cards"],
-        "summary": "Block a card",
-        "description": "Blocks a specific card due to loss, theft, or other reasons. This action is irreversible. Requires `cards:block` scope.",
-        "operationId": "blockCard",
-        "security": [
-          {
-            "OAuth2Auth": ["cards:block"]
-          }
-        ],
-        "parameters": [
-          {
-            "name": "cardId",
-            "in": "path",
-            "description": "Unique identifier for the card to be blocked.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^card_[a-zA-Z0-9]{5,30}$"
-            },
-            "example": "card_1111"
-          }
-        ],
-        "requestBody": {
-          "description": "Reason for blocking the card.",
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BlockCardRequest"
-              },
-              "examples": {
-                "blockReason": {
-                  "summary": "Example block card request",
-                  "value": {
-                    "reason": "LOST",
-                    "description": "Card lost during travel."
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Card blocked successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CardDetailsResponse"
+                  ]
                 },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful card block",
-                    "value": {
-                      "timestamp": "2023-10-27T10:35:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Card blocked successfully.",
-                      "data": {
-                        "cardId": "card_1111",
-                        "maskedCardNumber": "************1234",
-                        "cardType": "DEBIT",
-                        "expiryDate": "12/25",
-                        "statusCode": "BLOCKED",
-                        "cardholderName": "John Doe"
-                      }
-                    }
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:50:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Payment initiated. Status: PENDING.",
+                  "data": {
+                    "paymentRef": "pay_newpayment123",
+                    "sourceAccountRef": "acc_1234567890",
+                    "destinationAccountRef": "acc_partner987",
+                    "amount": 100.50,
+                    "currency": "USD",
+                    "description": "Online purchase",
+                    "status": "PENDING",
+                    "createdAt": "2023-10-27T10:50:00Z",
+                    "updatedAt": "2023-10-27T10:50:00Z"
                   }
                 }
               }
             }
           },
           "400": {
-            "$ref": "#/components/responses/BadRequest"
+            "$ref": "#/components/responses/400BadRequest"
           },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
+            "$ref": "#/components/responses/401Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "$ref": "#/components/responses/403Forbidden"
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "$ref": "#/components/responses/404NotFound"
           },
           "409": {
-            "description": "Conflict - Card is already blocked or cannot be blocked.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "alreadyBlocked": {
-                    "summary": "Card Already Blocked",
-                    "value": {
-                      "error": {
-                        "code": "CONFLICT",
-                        "message": "Card is already in a blocked state.",
-                        "traceId": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/409Conflict"
           },
           "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/customers/{customerRef}": {
-      "get": {
-        "tags": ["Customers"],
-        "summary": "Get customer details",
-        "description": "Retrieves detailed profile information for a specific customer. Requires `customers:read` scope.",
-        "operationId": "getCustomerDetails",
-        "security": [
-          {
-            "OAuth2Auth": ["customers:read"]
-          }
-        ],
-        "parameters": [
-          {
-            "name": "customerRef",
-            "in": "path",
-            "description": "Unique identifier for the customer.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^cust_[a-zA-Z0-9]{5,30}$"
-            },
-            "example": "cust_abc123"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Details of the specified customer.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomerDetailsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful response for customer details",
-                    "value": {
-                      "timestamp": "2023-10-27T10:40:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Customer details retrieved successfully.",
-                      "data": {
-                        "customerRef": "cust_abc123",
-                        "firstName": "John",
-                        "lastName": "Doe",
-                        "email": "john.doe@example.com",
-                        "phoneNumber": "+15551234567",
-                        "dateOfBirth": "1985-06-20",
-                        "kycStatus": "VERIFIED"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/customers/{customerRef}/kyc": {
-      "put": {
-        "tags": ["Customers"],
-        "summary": "Update customer KYC status",
-        "description": "Updates the Know Your Customer (KYC) verification status for a specific customer. This is typically an internal operation or triggered by an identity verification service. Requires `customers:manage` scope.",
-        "operationId": "updateCustomerKycStatus",
-        "security": [
-          {
-            "OAuth2Auth": ["customers:manage"]
-          }
-        ],
-        "parameters": [
-          {
-            "name": "customerRef",
-            "in": "path",
-            "description": "Unique identifier for the customer.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^cust_[a-zA-Z0-9]{5,30}$"
-            },
-            "example": "cust_abc123"
-          }
-        ],
-        "requestBody": {
-          "description": "New KYC status and verification details.",
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateKycStatusRequest"
-              },
-              "examples": {
-                "verifyKyc": {
-                  "summary": "Example KYC verification update",
-                  "value": {
-                    "kycStatus": "VERIFIED",
-                    "verificationMethod": "ID_CHECK",
-                    "verificationDate": "2023-10-27T10:45:00Z",
-                    "verifiedBy": "Agent_XYZ"
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/500InternalServerError"
           }
         },
-        "responses": {
-          "200": {
-            "description": "Customer KYC status updated successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomerDetailsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful KYC update",
-                    "value": {
-                      "timestamp": "2023-10-27T10:45:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Customer KYC status updated to VERIFIED.",
-                      "data": {
-                        "customerRef": "cust_abc123",
-                        "firstName": "John",
-                        "lastName": "Doe",
-                        "email": "john.doe@example.com",
-                        "phoneNumber": "+15551234567",
-                        "dateOfBirth": "1985-06-20",
-                        "kycStatus": "VERIFIED"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/customers/{customerRef}/consents": {
-      "get": {
-        "tags": ["Consent Management", "Customers"],
-        "summary": "List customer consents",
-        "description": "Retrieves a list of all data sharing consents provided by a specific customer, in compliance with PSD2/Open Banking regulations. Requires `consents:read` scope.",
-        "operationId": "listCustomerConsents",
         "security": [
           {
-            "OAuth2Auth": ["consents:read"]
+            "OAuth2ClientCredentials": [
+              "payments:initiate"
+            ]
           }
+        ]
+      }
+    },
+    "/payments/{paymentRef}": {
+      "get": {
+        "tags": [
+          "Payments"
         ],
+        "summary": "Get payment details by ID",
+        "description": "Retrieves the detailed status and information of a specific payment. Requires `payments:read` scope.",
+        "operationId": "getPaymentById",
         "parameters": [
           {
-            "name": "customerRef",
+            "name": "paymentRef",
             "in": "path",
-            "description": "Unique identifier for the customer.",
+            "description": "Unique identifier for the payment.",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^cust_[a-zA-Z0-9]{5,30}$"
+              "pattern": "^pay_[a-zA-Z0-9]{10,30}$"
             },
-            "example": "cust_abc123"
+            "example": "pay_newpayment123"
+          },
+          {
+            "$ref": "#/components/parameters/XRequestIdHeader"
+          },
+          {
+            "$ref": "#/components/parameters/XCorrelationIdHeader"
           }
         ],
         "responses": {
           "200": {
-            "description": "A list of customer consents.",
+            "description": "Payment details retrieved successfully.",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "X-RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "X-RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedConsentsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful response for listing consents",
-                    "value": {
-                      "timestamp": "2023-10-27T10:50:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Consents retrieved successfully.",
-                      "data": {
-                        "items": [
-                          {
-                            "consentId": "con_data_sharing",
-                            "customerRef": "cust_abc123",
-                            "dataType": "ACCOUNT_INFORMATION",
-                            "isGranted": true,
-                            "grantedAt": "2023-01-01T10:00:00Z",
-                            "expiresAt": "2024-01-01T10:00:00Z",
-                            "thirdPartyProvider": "FinTechApp"
-                          },
-                          {
-                            "consentId": "con_marketing",
-                            "customerRef": "cust_abc123",
-                            "dataType": "MARKETING_PREFERENCES",
-                            "isGranted": false,
-                            "grantedAt": "2022-05-10T11:00:00Z",
-                            "expiresAt": null,
-                            "thirdPartyProvider": null
-                          }
-                        ],
-                        "pagination": {
-                          "limit": 20,
-                          "offset": 0,
-                          "totalCount": 2,
-                          "totalPages": 1,
-                          "hasNextPage": false,
-                          "hasPreviousPage": false
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Payment"
                         }
                       }
                     }
+                  ]
+                },
+                "example": {
+                  "eventTimestamp": "2023-10-27T10:55:00Z",
+                  "statusCode": "SUCCESS",
+                  "message": "Payment details retrieved.",
+                  "data": {
+                    "paymentRef": "pay_newpayment123",
+                    "sourceAccountRef": "acc_1234567890",
+                    "destinationAccountRef": "acc_partner987",
+                    "amount": 100.50,
+                    "currency": "USD",
+                    "description": "Online purchase",
+                    "status": "COMPLETED",
+                    "createdAt": "2023-10-27T10:50:00Z",
+                    "updatedAt": "2023-10-27T10:52:00Z"
                   }
                 }
               }
             }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
-            "$ref": "#/components/responses/Unauthorized"
+            "$ref": "#/components/responses/401Unauthorized"
           },
           "403": {
-            "$ref": "#/components/responses/Forbidden"
+            "$ref": "#/components/responses/403Forbidden"
           },
           "404": {
-            "$ref": "#/components/responses/NotFound"
+            "$ref": "#/components/responses/404NotFound"
           },
           "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
-    "/customers/{customerRef}/consents/{consentId}": {
-      "put": {
-        "tags": ["Consent Management", "Customers"],
-        "summary": "Update customer consent",
-        "description": "Updates the status of a specific data sharing consent for a customer. This allows customers to grant or revoke access to their data. Requires `consents:manage` scope.",
-        "operationId": "updateCustomerConsent",
-        "security": [
-          {
-            "OAuth2Auth": ["consents:manage"]
-          }
-        ],
-        "parameters": [
-          {
-            "name": "customerRef",
-            "in": "path",
-            "description": "Unique identifier for the customer.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^cust_[a-zA-Z0-9]{5,30}$"
-            },
-            "example": "cust_abc123"
-          },
-          {
-            "name": "consentId",
-            "in": "path",
-            "description": "Unique identifier for the consent.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^con_[a-zA-Z0-9_]{5,50}$"
-            },
-            "example": "con_data_sharing"
-          }
-        ],
-        "requestBody": {
-          "description": "New consent status and optional expiry date.",
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateConsentRequest"
-              },
-              "examples": {
-                "revokeConsent": {
-                  "summary": "Example of revoking consent",
-                  "value": {
-                    "isGranted": false,
-                    "expiresAt": null
-                  }
-                },
-                "grantConsent": {
-                  "summary": "Example of granting consent",
-                  "value": {
-                    "isGranted": true,
-                    "expiresAt": "2024-10-27T10:55:00Z"
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/500InternalServerError"
           }
         },
-        "responses": {
-          "200": {
-            "description": "Customer consent updated successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConsentDetailsResponse"
-                },
-                "examples": {
-                  "successResponse": {
-                    "summary": "Successful consent update",
-                    "value": {
-                      "timestamp": "2023-10-27T10:55:00Z",
-                      "statusCode": "SUCCESS",
-                      "message": "Consent updated successfully.",
-                      "data": {
-                        "consentId": "con_data_sharing",
-                        "customerRef": "cust_abc123",
-                        "dataType": "ACCOUNT_INFORMATION",
-                        "isGranted": false,
-                        "grantedAt": "2023-01-01T10:00:00Z",
-                        "expiresAt": null,
-                        "thirdPartyProvider": "FinTechApp"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
+        "security": [
+          {
+            "OAuth2ClientCredentials": [
+              "payments:read"
+            ]
           }
-        }
+        ]
       }
     }
   },
   "components": {
     "schemas": {
-      "ErrorDetail": {
+      "ApiResponse": {
         "type": "object",
-        "description": "Detailed information about a specific error field or issue.",
+        "description": "Standard API response wrapper.",
         "properties": {
-          "field": {
+          "eventTimestamp": {
             "type": "string",
-            "description": "The name of the field that caused the error, if applicable."
+            "format": "date-time",
+            "description": "Timestamp of when the event occurred.",
+            "example": "2023-10-27T10:00:00Z"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "A short, machine-readable status code.",
+            "enum": [
+              "SUCCESS",
+              "ERROR",
+              "WARNING"
+            ],
+            "example": "SUCCESS"
           },
           "message": {
             "type": "string",
-            "description": "A human-readable message describing the error for the specific field."
+            "description": "A human-readable message providing more details about the response.",
+            "example": "Operation completed successfully."
           }
         },
+        "required": [
+          "eventTimestamp",
+          "statusCode",
+          "message"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "description": "Standard error response format.",
+        "properties": {
+          "eventTimestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of when the error occurred.",
+            "example": "2023-10-27T10:00:00Z"
+          },
+          "statusCode": {
+            "type": "string",
+            "description": "A short, machine-readable error code.",
+            "enum": [
+              "ERROR"
+            ],
+            "example": "ERROR"
+          },
+          "message": {
+            "type": "string",
+            "description": "A human-readable error message.",
+            "example": "Invalid input provided."
+          },
+          "errorCode": {
+            "type": "string",
+            "description": "Specific error code for programmatic handling.",
+            "example": "INVALID_PARAMETER"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "description": "The field that caused the error (if applicable).",
+                  "example": "email"
+                },
+                "issue": {
+                  "type": "string",
+                  "description": "Description of the issue.",
+                  "example": "Must be a valid email format."
+                }
+              }
+            },
+            "description": "Detailed error information, e.g., for validation errors."
+          }
+        },
+        "required": [
+          "eventTimestamp",
+          "statusCode",
+          "message",
+          "errorCode"
+        ]
+      },
+      "Pagination": {
+        "type": "object",
+        "description": "Pagination metadata for list responses using cursor-based pagination.",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "The maximum number of items requested per page.",
+            "example": 10
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "A cursor string to retrieve the next page of results. Null if no more pages.",
+            "example": "eyJpZCI6ImN1c3RfZmVkY2JhMDk4NzY1NDMyMSIsImNyZWF0ZWRBdCI6IjIwMjMtMDUtMTVUMDk6MDA6MDBaIn0="
+          },
+          "previousCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "A cursor string to retrieve the previous page of results. Null if on the first page.",
+            "example": "eyJpZCI6ImN1c3RfYWJjZGVmMTIzNDU2Nzg5MCIsImNyZWF0ZWRBdCI6IjIwMjItMDEtMDFUMTA6MDA6MDBaIn0="
+          },
+          "totalCount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of items available across all pages. This might be an approximate count for performance reasons.",
+            "example": 100
+          }
+        },
+        "required": [
+          "limit",
+          "nextCursor",
+          "previousCursor"
+        ]
+      },
+      "Address": {
+        "type": "object",
+        "description": "Customer's physical address details.",
+        "properties": {
+          "street": {
+            "type": "string",
+            "description": "Street name and house number.",
+            "example": "123 Main St"
+          },
+          "city": {
+            "type": "string",
+            "description": "City.",
+            "example": "Anytown"
+          },
+          "state": {
+            "type": "string",
+            "description": "State or province.",
+            "example": "CA"
+          },
+          "postalCode": {
+            "type": "string",
+            "description": "Postal or ZIP code.",
+            "example": "90210"
+          },
+          "country": {
+            "type": "string",
+            "description": "Country.",
+            "example": "USA"
+          }
+        },
+        "required": [
+          "street",
+          "city",
+          "state",
+          "postalCode",
+          "country"
+        ]
+      },
+      "Customer": {
+        "type": "object",
+        "description": "Represents a banking customer.",
+        "properties": {
+          "customerRef": {
+            "type": "string",
+            "pattern": "^cust_[a-zA-Z0-9]{10,30}$",
+            "description": "Unique identifier for the customer.",
+            "example": "cust_abcdef1234567890"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Customer's first name.",
+            "example": "John"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Customer's last name.",
+            "example": "Doe"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Customer's email address.",
+            "example": "john.doe@example.com"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "description": "Customer's phone number in E.164 format.",
+            "example": "+15551234567"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Customer's date of birth (YYYY-MM-DD).",
+            "example": "1985-06-20"
+          },
+          "kycStatusCode": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "VERIFIED",
+              "REJECTED",
+              "EXPIRED"
+            ],
+            "description": "Current Know Your Customer (KYC) verification status.",
+            "example": "VERIFIED"
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address",
+            "description": "Customer's primary address."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the customer record was created.",
+            "example": "2022-01-01T10:00:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the customer record was last updated.",
+            "example": "2023-10-27T11:00:00Z"
+          }
+        },
+        "required": [
+          "customerRef",
+          "firstName",
+          "lastName",
+          "email",
+          "phoneNumber",
+          "dateOfBirth",
+          "kycStatusCode",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateCustomerRequest": {
+        "type": "object",
+        "description": "Request body for creating a new customer.",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "Customer's first name.",
+            "example": "Alice"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Customer's last name.",
+            "example": "Smith"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Customer's email address.",
+            "example": "alice.smith@example.com"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "description": "Customer's phone number in E.164 format.",
+            "example": "+15559876543"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "description": "Customer's date of birth (YYYY-MM-DD).",
+            "example": "1990-03-10"
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address",
+            "description": "Customer's primary address."
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "email",
+          "phoneNumber",
+          "dateOfBirth",
+          "address"
+        ]
+      },
+      "UpdateCustomerRequest": {
+        "type": "object",
+        "description": "Request body for updating an existing customer. All fields are optional for partial updates.",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "description": "Customer's first name.",
+            "example": "Johnathan"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Customer's last name.",
+            "example": "Doe-Smith"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Customer's email address.",
+            "example": "john.newemail@example.com"
+          },
+          "phoneNumber": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "description": "Customer's phone number in E.164 format.",
+            "example": "+15551112222"
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address",
+            "description": "Customer's primary address."
+          }
+        }
+      },
+      "KycVerificationRequest": {
+        "type": "object",
+        "description": "Request body for initiating or updating KYC verification.",
+        "properties": {
+          "documentType": {
+            "type": "string",
+            "enum": [
+              "PASSPORT",
+              "DRIVERS_LICENSE",
+              "NATIONAL_ID"
+            ],
+            "description": "Type of identity document submitted.",
+            "example": "PASSPORT"
+          },
+          "documentNumber": {
+            "type": "string",
+            "description": "The identification number from the document.",
+            "example": "P12345678"
+          },
+          "issueDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the document was issued (YYYY-MM-DD).",
+            "example": "2020-01-01"
+          },
+          "expiryDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the document expires (YYYY-MM-DD).",
+            "example": "2030-01-01"
+          },
+          "selfieDocumentUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to a selfie image holding the document.",
+            "example": "https://cdn.example.com/kyc/selfie_cust123.jpg"
+          },
+          "documentFrontUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to the front image of the document.",
+            "example": "https://cdn.example.com/kyc/doc_front_cust123.jpg"
+          },
+          "documentBackUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to the back image of the document (if applicable).",
+            "example": "https://cdn.example.com/kyc/doc_back_cust123.jpg"
+          }
+        },
+        "required": [
+          "documentType",
+          "documentNumber",
+          "issueDate",
+          "expiryDate",
+          "selfieDocumentUrl"
+        ]
+      },
+      "Account": {
+        "type": "object",
+        "description": "Represents a customer's bank account.",
+        "properties": {
+          "accountRef": {
+            "type": "string",
+            "pattern": "^acc_[a-zA-Z0-9]{10,30}$",
+            "description": "Unique identifier for the account.",
+            "example": "acc_1234567890"
+          },
+          "customerRef": {
+            "type": "string",
+            "pattern": "^cust_[a-zA-Z0-9]{10,30}$",
+            "description": "Unique identifier for the customer who owns this account.",
+            "example": "cust_abcdef1234567890"
+          },
+          "accountType": {
+            "type": "string",
+            "enum": [
+              "CHECKING",
+              "SAVINGS",
+              "CREDIT_CARD",
+              "LOAN"
+            ],
+            "description": "Type of the bank account.",
+            "example": "CHECKING"
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "description": "ISO 4217 currency code for the account.",
+            "example": "USD"
+          },
+          "balance": {
+            "type": "number",
+            "format": "float",
+            "description": "Current balance of the account.",
+            "example": 1500.75
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "CLOSED",
+              "FROZEN"
+            ],
+            "description": "Current status of the account.",
+            "example": "ACTIVE"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the account was created.",
+            "example": "2022-01-01T10:00:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the account was last updated.",
+            "example": "2023-10-27T10:25:00Z"
+          }
+        },
+        "required": [
+          "accountRef",
+          "customerRef",
+          "accountType",
+          "currency",
+          "balance",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateAccountRequest": {
+        "type": "object",
+        "description": "Request body for creating a new account.",
+        "properties": {
+          "accountType": {
+            "type": "string",
+            "enum": [
+              "CHECKING",
+              "SAVINGS",
+              "CREDIT_CARD",
+              "LOAN"
+            ],
+            "description": "Type of the bank account to create.",
+            "example": "SAVINGS"
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "description": "ISO 4217 currency code for the account.",
+            "example": "USD"
+          },
+          "initialDeposit": {
+            "type": "number",
+            "format": "float",
+            "description": "Initial amount to deposit into the new account.",
+            "minimum": 0,
+            "example": 100.00
+          }
+        },
+        "required": [
+          "accountType",
+          "currency",
+          "initialDeposit"
+        ]
+      },
+      "UpdateAccountRequest": {
+        "type": "object",
+        "description": "Request body for updating an existing account. All fields are optional for partial updates.",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "CLOSED",
+              "FROZEN"
+            ],
+            "description": "New status for the account.",
+            "example": "INACTIVE"
+          }
+        }
+      },
+      "Transaction": {
+        "type": "object",
+        "description": "Represents a financial transaction.",
+        "properties": {
+          "transactionRef": {
+            "type": "string",
+            "pattern": "^txn_[a-zA-Z0-9]{10,30}$",
+            "description": "Unique identifier for the transaction.",
+            "example": "txn_abc123"
+          },
+          "accountRef": {
+            "type": "string",
+            "pattern": "^acc_[a-zA-Z0-9]{10,30}$",
+            "description": "Identifier of the account involved in the transaction.",
+            "example": "acc_1234567890"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "DEBIT",
+              "CREDIT"
+            ],
+            "description": "Type of transaction (e.g., DEBIT, CREDIT).",
+            "example": "DEBIT"
+          },
+          "amount": {
+            "type": "number",
+            "format": "float",
+            "description": "Amount of the transaction.",
+            "example": 50.00
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "description": "ISO 4217 currency code.",
+            "example": "USD"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the transaction.",
+            "example": "Coffee Shop"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "COMPLETED",
+              "FAILED",
+              "CANCELLED"
+            ],
+            "description": "Current status of the transaction.",
+            "example": "COMPLETED"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the transaction occurred.",
+            "example": "2023-10-26T09:30:00Z"
+          }
+        },
+        "required": [
+          "transactionRef",
+          "accountRef",
+          "type",
+          "amount",
+          "currency",
+          "description",
+          "status",
+          "timestamp"
+        ]
+      },
+      "Payment": {
+        "type": "object",
+        "description": "Represents a payment initiated through the API.",
+        "properties": {
+          "paymentRef": {
+            "type": "string",
+            "pattern": "^pay_[a-zA-Z0-9]{10,30}$",
+            "description": "Unique identifier for the payment.",
+            "example": "pay_newpayment123"
+          },
+          "sourceAccountRef": {
+            "type": "string",
+            "pattern": "^acc_[a-zA-Z0-9]{10,30}$",
+            "description": "Identifier of the source account for the payment.",
+            "example": "acc_1234567890"
+          },
+          "destinationAccountRef": {
+            "type": "string",
+            "pattern": "^acc_[a-zA-Z0-9]{10,30}$",
+            "description": "Identifier of the destination account for the payment.",
+            "example": "acc_partner987"
+          },
+          "amount": {
+            "type": "number",
+            "format": "float",
+            "description": "Amount of the payment.",
+            "example": 100.50
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "description": "ISO 4217 currency code.",
+            "example": "USD"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the payment.",
+            "example": "Online purchase"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "COMPLETED",
+              "FAILED",
+              "CANCELLED",
+              "REFUNDED"
+            ],
+            "description": "Current status of the payment.",
+            "example": "PENDING"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the payment was initiated.",
+            "example": "2023-10-27T10:50:00Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the payment status was last updated.",
+            "example": "2023-10-27T10:50:00Z"
+          }
+        },
+        "required": [
+          "paymentRef",
+          "sourceAccountRef",
+          "destinationAccountRef",
+          "amount",
+          "currency",
+          "description",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "InitiatePaymentRequest": {
+        "type": "object",
+        "description": "Request body for initiating a new payment.",
+        "properties": {
+          "sourceAccountRef": {
+            "type": "string",
+            "pattern": "^acc_[a-zA-Z0-9]{10,30}$",
+            "description": "Identifier of the source account for the payment.",
+            "example": "acc_1234567890"
+          },
+          "destinationAccountRef": {
+            "type": "string",
+            "pattern": "^acc_[a-zA-Z0-9]{10,30}$",
+            "description": "Identifier of the destination account for the payment.",
+            "example": "acc_partner987"
+          },
+          "amount": {
+            "type": "number",
+            "format": "float",
+            "description": "Amount of the payment.",
+            "minimum": 0.01,
+            "example": 100.50
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "description": "ISO 4217 currency code.",
+            "example": "USD"
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the payment.",
+            "example": "Online purchase"
+          },
+          "paymentMethod": {
+            "type": "string",
+            "enum": [
+              "BANK_TRANSFER",
+              "CARD_PAYMENT",
+              "WALLET_TRANSFER"
+            ],
+            "description": "Method used for the payment.",
+            "example": "BANK_TRANSFER"
+          }
+        },
+        "required": [
+          "sourceAccountRef",
+          "destinationAccountRef",
+          "amount",
+          "currency",
+          "description",
+          "paymentMethod"
+        ]
+      }
+    },
+    "parameters": {
+      "LimitParam": {
+        "name": "limit",
+        "in": "query",
+        "description": "Maximum number of items to return per page.",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10
+        },
+        "example": 10
+      },
+      "CursorParam": {
+        "name": "cursor",
+        "in": "query",
+        "description": "A cursor for pagination, indicating the starting point of the next page. Typically an opaque string.",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "example": "eyJpZCI6ImN1c3RfZmVkY2JhMDk4NzY1NDMyMSIsImNyZWF0ZWRBdCI6IjIwMjMtMDUtMTVUMDk6MDA6MDBaIn0="
+      },
+      "CustomerRefParam": {
+        "name": "customerRef",
+        "in": "path",
+        "description": "Unique identifier for the customer.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^cust_[a-zA-Z0-9]{10,30}$"
+        },
+        "example": "cust_abcdef1234567890"
+      },
+      "AccountRefParam": {
+        "name": "accountRef",
+        "in": "path",
+        "description": "Unique identifier for the account.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^acc_[a-zA-Z0-9]{10,30}$"
+        },
+        "example": "acc_1234567890"
+      },
+      "IdempotencyKeyHeader": {
+        "name": "X-Idempotency-Key",
+        "in": "header",
+        "description": "A unique key to prevent duplicate requests. Max 255 characters. Clients should generate a unique UUID for each new request.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "maxLength": 255,
+          "format": "uuid"
+        },
+        "example": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+      },
+      "XRequestIdHeader": {
+        "name": "X-Request-ID",
+        "in": "header",
+        "description": "A unique identifier for the request, useful for tracing and debugging across services. Clients should generate a unique UUID for each request.",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "example": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+      },
+      "XCorrelationIdHeader": {
+        "name": "X-Correlation-ID",
+        "in": "header",
+        "description": "A unique identifier for a series of related requests, useful for end-to-end tracing of a business process. If not provided, a new one will be generated.",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "example": "fedcba98-7654-3210-fedc-ba9876543210"
+      }
+    },
+    "headers": {
+      "RateLimitLimit": {
+        "description": "The maximum number of requests permitted in the current rate limit window.",
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "example": 60
+        }
+      },
+      "RateLimitRemaining": {
+        "description": "The number of requests remaining in the current rate limit window.",
+        "schema": {
+          "type": "integer",
+          "format": "int32",
+          "example": 58
+        }
+      },
+      "RateLimitReset": {
+        "description": "The time at which the current rate limit window resets in UTC epoch seconds.",
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "example": 1678886400
+        }
+      }
+    },
+    "responses": {
+      "400BadRequest": {
+        "description": "Bad Request - The request was malformed or invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "eventTimestamp": "2023-10-27T10:00:00Z",
+              "statusCode": "ERROR",
+              "message": "Invalid input provided.",
+              "errorCode": "INVALID_PARAMETER",
+              "details": [
+                {
+                  "field": "email",
+                  "issue": "Must be a valid email format."
+                }
+              ]
+            }
+          }
+        }
+      },
+      "401Unauthorized": {
+        "description": "Unauthorized - Authentication credentials were missing or invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "eventTimestamp": "2023-10-27T10:00:00Z",
+              "statusCode": "ERROR",
+              "message": "Authentication required.",
+              "errorCode": "UNAUTHORIZED"
+            }
+          }
+        }
+      },
+      "403Forbidden": {
+        "description": "Forbidden - The authenticated user does not have the necessary permissions.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "eventTimestamp": "2023-10-27T10:00:00Z",
+              "statusCode": "ERROR",
+              "message": "Access denied. Insufficient scope.",
+              "errorCode": "FORBIDDEN"
+            }
+          }
+        }
+      },
+      "404NotFound": {
+        "description": "Not Found - The requested resource could not be found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "eventTimestamp": "2023-10-27T10:00:00Z",
+              "statusCode": "ERROR",
+              "message": "Resource not found.",
+              "errorCode": "NOT_FOUND"
+            }
+          }
+        }
+      },
+      "409Conflict": {
+        "description": "Conflict - The request could not be completed due to a conflict with the current state of the resource (e.g., duplicate entry, idempotency key conflict).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "eventTimestamp": "2023-10-27T10:00:00Z",
+              "statusCode": "ERROR",
+              "message": "A resource with the same identifier already exists.",
+              "errorCode": "CONFLICT_ERROR"
+            }
+          }
+        }
+      },
+      "500InternalServerError": {
+        "description": "Internal Server Error - An unexpected error occurred on the server.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "eventTimestamp": "2023-10-27T10:00:00Z",
+              "statusCode": "ERROR",
+              "message": "An unexpected error occurred.",
+              "errorCode": "INTERNAL_SERVER_ERROR"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "OAuth2ClientCredentials": {
+        "type": "oauth2",
+        "description": "OAuth 2.0 Client Credentials Grant for server-to-server communication.",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "https://auth.example.com/oauth/token",
+            "scopes": {
+              "accounts:read": "Read customer account information.",
+              "accounts:write": "Create and update customer accounts.",
+              "transactions:read": "Read customer transaction history.",
+              "transactions:write": "Initiate and manage transactions.",
+              "customers:read": "Read customer profile and KYC information.",
+              "customers:write": "Create and update customer profiles and KYC.",
+              "cards:read": "Read customer card details.",
+              "cards:write": "Manage customer cards (e.g., activate, deactivate).",
+              "payments:initiate": "Initiate payments.",
+              "consent:manage": "Manage customer consent for data sharing."
+            }
+          }
+        }
+      }
+    }
+  }
+}
